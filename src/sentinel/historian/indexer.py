@@ -6,7 +6,7 @@ extracting relevant metadata and code changes for analysis.
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import git
 
 
@@ -66,7 +66,9 @@ class GitIndexer:
             "hash": commit.hexsha,
             "author": str(commit.author),
             "author_email": commit.author.email,
-            "date": datetime.fromtimestamp(commit.committed_date).isoformat(),
+            "date": datetime.fromtimestamp(
+                commit.committed_date, tz=timezone.utc
+            ).isoformat(),
             "message": commit.message.strip(),
             "diffs": [],
         }

@@ -131,14 +131,17 @@ class HistorianMemory:
             documents.append(document)
 
             # Store metadata
+            message = commit["message"]
+            truncated_message = message[:MAX_MESSAGE_LENGTH]
+            if len(message) > MAX_MESSAGE_LENGTH:
+                truncated_message += "..."
+
             metadata = {
                 "hash": commit["hash"],
                 "author": commit["author"],
                 "author_email": commit.get("author_email", ""),
                 "date": commit["date"],
-                "message": commit["message"][
-                    :MAX_MESSAGE_LENGTH
-                ],  # Truncate long messages
+                "message": truncated_message,
             }
             metadatas.append(metadata)
 
