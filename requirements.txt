@@ -1,0 +1,7 @@
+langgraph
+langchain
+tree-sitter
+docker
+chromadb
+pytest
+ruff
