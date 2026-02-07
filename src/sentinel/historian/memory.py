@@ -12,6 +12,10 @@ from chromadb.api.types import EmbeddingFunction
 
 # Maximum length for commit messages stored in metadata
 MAX_MESSAGE_LENGTH = 500
+# Number of bytes produced by SHA-256 hash function
+SHA256_BYTES = 32
+# Maximum number of diff lines to include in document preview
+MAX_DIFF_PREVIEW_LINES = 10
 
 
 class SimpleHashEmbedding(EmbeddingFunction):
@@ -40,7 +44,9 @@ class SimpleHashEmbedding(EmbeddingFunction):
         for text in input:
             # Create embedding by hashing multiple variations to get enough bytes
             embedding = []
-            for i in range((self.dimension + 31) // 32):  # 32 bytes per SHA-256
+            for i in range(
+                (self.dimension + SHA256_BYTES - 1) // SHA256_BYTES
+            ):  # Iterations needed for dimension
                 hash_input = f"{text}:{i}".encode()
                 hash_obj = hashlib.sha256(hash_input)
                 hash_bytes = hash_obj.digest()
@@ -118,7 +124,7 @@ class HistorianMemory:
                     doc_parts.append(f"  - {diff['file_path']} ({diff['change_type']})")
                     if diff.get("diff"):
                         # Include a snippet of the diff
-                        diff_lines = diff["diff"].split("\n")[:10]
+                        diff_lines = diff["diff"].split("\n")[:MAX_DIFF_PREVIEW_LINES]
                         doc_parts.append("\n".join(diff_lines))
 
             document = "\n".join(doc_parts)
