@@ -9,4 +9,4 @@ from .engine import ContextualHistorian
 from .indexer import GitIndexer
 from .memory import HistorianMemory
 
-__all__ = ['ContextualHistorian', 'GitIndexer', 'HistorianMemory']
+__all__ = ["ContextualHistorian", "GitIndexer", "HistorianMemory"]
