@@ -5,3 +5,4 @@ docker
 chromadb
 pytest
 ruff
+gitpython
