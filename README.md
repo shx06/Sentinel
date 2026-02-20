@@ -23,6 +23,12 @@ Provides isolated, reproducible environments for testing and experimentation. Se
 ### 5. Principled Gatekeeper (Executive Decision)
 Enforces quality standards, security policies, and best practices with unwavering consistency. Sentinel acts as the final checkpoint, ensuring that only code meeting defined criteria makes it into your codebase.
 
+Historian learns the project history.
+Guardian checks the architecture.
+Fuzzer attacks the functions.
+Sandbox runs the tests safely.
+Gatekeeper issues a PASS/FAIL verdict.
+
 ## Tech Stack
 
 - **Python**: Core implementation language
