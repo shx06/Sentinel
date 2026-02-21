@@ -9,6 +9,8 @@ change should be approved or rejected.
 from abc import ABC, abstractmethod
 from typing import Any, List, Optional
 
+from sentinel.core.languages import Language
+
 
 class Policy(ABC):
     """
@@ -43,6 +45,24 @@ class Policy(ABC):
             List of human-readable violation messages.  An empty list means
             no violation.
         """
+
+    def applies_to(self, language: Language) -> bool:
+        """
+        Return whether this policy should be evaluated for the given language.
+
+        The default implementation returns ``True`` for every language,
+        meaning the policy is universal.  Language-specific subclasses
+        should override this method to restrict evaluation to the relevant
+        language(s).
+
+        Args:
+            language: The :class:`~sentinel.core.languages.Language` of the
+                      code change being evaluated.
+
+        Returns:
+            ``True`` when the policy should run, ``False`` to skip it.
+        """
+        return True
 
 
 class NoCriticalBugsPolicy(Policy):
@@ -163,6 +183,127 @@ class TestPassPolicy(Policy):
                 "tests must pass before merging."
             ]
         return []
+
+
+class NoCircularDependenciesPolicy(Policy):
+    """
+    Rejects a change when the Guardian reports circular dependencies.
+
+    This policy is specific to **Python** projects.  For other languages it
+    is skipped automatically via :meth:`applies_to`.
+
+    The *guardian_report* is expected to be a list of violation strings as
+    returned by :meth:`~sentinel.core.guardian.ArchitecturalGuardian.check_rules`.
+    Entries that contain the word ``"Circular"`` are treated as blocking.
+    """
+
+    def applies_to(self, language: Language) -> bool:
+        """Return ``True`` only for Python."""
+        return language is Language.PYTHON
+
+    def evaluate(
+        self,
+        historian_report: Optional[Any],
+        guardian_report: Optional[Any],
+        fuzzer_report: Optional[Any],
+        sandbox_report: Optional[Any],
+    ) -> List[str]:
+        """
+        Check for circular dependency violations from the Guardian.
+
+        Args:
+            historian_report: Unused by this policy.
+            guardian_report: List of violation strings from the Guardian,
+                             or ``None``.
+            fuzzer_report: Unused by this policy.
+            sandbox_report: Unused by this policy.
+
+        Returns:
+            List of circular-dependency violation messages, or an empty list.
+        """
+        if not guardian_report:
+            return []
+        return [v for v in guardian_report if "Circular" in v]
+
+
+class StrictTypingPolicy(Policy):
+    """
+    Rejects a change when the Guardian reports typing violations.
+
+    This policy is specific to **TypeScript** and **JavaScript** projects.
+    For other languages it is skipped automatically via :meth:`applies_to`.
+
+    The *guardian_report* is expected to be a list of violation strings.
+    Entries that contain the word ``"Typing"`` are treated as blocking.
+    """
+
+    def applies_to(self, language: Language) -> bool:
+        """Return ``True`` only for TypeScript and JavaScript."""
+        return language in (Language.TYPESCRIPT, Language.JAVASCRIPT)
+
+    def evaluate(
+        self,
+        historian_report: Optional[Any],
+        guardian_report: Optional[Any],
+        fuzzer_report: Optional[Any],
+        sandbox_report: Optional[Any],
+    ) -> List[str]:
+        """
+        Check for typing violations from the Guardian.
+
+        Args:
+            historian_report: Unused by this policy.
+            guardian_report: List of violation strings from the Guardian,
+                             or ``None``.
+            fuzzer_report: Unused by this policy.
+            sandbox_report: Unused by this policy.
+
+        Returns:
+            List of typing violation messages, or an empty list.
+        """
+        if not guardian_report:
+            return []
+        return [v for v in guardian_report if "Typing" in v]
+
+
+class JavaLayeringPolicy(Policy):
+    """
+    Rejects a change when the Guardian reports layering violations.
+
+    This policy is specific to **Java** projects.  For other languages it
+    is skipped automatically via :meth:`applies_to`.
+
+    The *guardian_report* is expected to be a list of violation strings.
+    Entries that contain the word ``"Layering"`` are treated as blocking.
+    """
+
+    def applies_to(self, language: Language) -> bool:
+        """Return ``True`` only for Java."""
+        return language is Language.JAVA
+
+    def evaluate(
+        self,
+        historian_report: Optional[Any],
+        guardian_report: Optional[Any],
+        fuzzer_report: Optional[Any],
+        sandbox_report: Optional[Any],
+    ) -> List[str]:
+        """
+        Check for layering violations from the Guardian.
+
+        Args:
+            historian_report: Unused by this policy.
+            guardian_report: List of violation strings from the Guardian,
+                             or ``None``.
+            fuzzer_report: Unused by this policy.
+            sandbox_report: Unused by this policy.
+
+        Returns:
+            List of layering violation messages, or an empty list.
+        """
+        if not guardian_report:
+            return []
+        return [v for v in guardian_report if "Layering" in v]
 
 
 class PolicyConfig:
