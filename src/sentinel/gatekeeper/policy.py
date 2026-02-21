@@ -228,18 +228,19 @@ class NoCircularDependenciesPolicy(Policy):
 
 class StrictTypingPolicy(Policy):
     """
-    Rejects a change when the Guardian reports typing violations.
+    Rejects a change when the Guardian reports ``any`` type usage.
 
-    This policy is specific to **TypeScript** and **JavaScript** projects.
-    For other languages it is skipped automatically via :meth:`applies_to`.
+    This policy is specific to **TypeScript** projects.  For other languages
+    it is skipped automatically via :meth:`applies_to`.
 
     The *guardian_report* is expected to be a list of violation strings.
-    Entries that contain the word ``"Typing"`` are treated as blocking.
+    Entries that contain the phrase ``"Found usage of 'any'"``
+    (case-insensitive) are treated as blocking.
     """
 
     def applies_to(self, language: Language) -> bool:
-        """Return ``True`` only for TypeScript and JavaScript."""
-        return language in (Language.TYPESCRIPT, Language.JAVASCRIPT)
+        """Return ``True`` only for TypeScript."""
+        return language is Language.TYPESCRIPT
 
     def evaluate(
         self,
@@ -249,7 +250,7 @@ class StrictTypingPolicy(Policy):
         sandbox_report: Optional[Any],
     ) -> List[str]:
         """
-        Check for typing violations from the Guardian.
+        Check for ``any`` type usage violations from the Guardian.
 
         Args:
             historian_report: Unused by this policy.
@@ -259,11 +260,14 @@ class StrictTypingPolicy(Policy):
             sandbox_report: Unused by this policy.
 
         Returns:
-            List of typing violation messages, or an empty list.
+            List of ``any``-usage violation messages, or an empty list.
         """
         if not guardian_report:
             return []
-        return [v for v in guardian_report if "Typing" in v]
+        return [
+            v for v in guardian_report
+            if "found usage of 'any'" in v.lower()
+        ]
 
 
 class JavaLayeringPolicy(Policy):
