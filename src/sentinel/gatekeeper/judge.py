@@ -8,6 +8,7 @@ Aggregates intelligence from all Sentinel pillars and renders a final
 
 from typing import Any, List, Optional
 
+from sentinel.core.languages import Language
 from .policy import Policy, PolicyConfig
 from .verdict import Verdict
 
@@ -55,17 +56,19 @@ class Gatekeeper:
         guardian_report: Optional[Any] = None,
         fuzzer_report: Optional[Any] = None,
         sandbox_report: Optional[Any] = None,
+        language: Language = Language.UNKNOWN,
     ) -> Verdict:
         """
         Evaluate all pillar reports and return a final :class:`~sentinel.gatekeeper.verdict.Verdict`.
 
-        Iterates through every enabled :class:`~sentinel.gatekeeper.policy.Policy`,
-        collects violations, and produces a verdict.  The change is approved
-        only when no policy reports a violation.
+        Iterates through every enabled :class:`~sentinel.gatekeeper.policy.Policy`
+        whose :meth:`~sentinel.gatekeeper.policy.Policy.applies_to` returns
+        ``True`` for *language*, collects violations, and produces a verdict.
+        The change is approved only when no policy reports a violation.
 
         Confidence is calculated as the ratio of passing policies to the
         total number of evaluated policies (``1.0`` when there are no
-        policies).
+        applicable policies).
 
         Args:
             historian_report: Report from the Contextual Historian (optional).
@@ -75,13 +78,20 @@ class Gatekeeper:
                            the Adversarial Fuzzer (optional).
             sandbox_report: :class:`~sentinel.sandbox.runner.RunResult` from
                             the Sandbox (optional).
+            language: The :class:`~sentinel.core.languages.Language` of the
+                      code change being evaluated.  Defaults to
+                      :attr:`~sentinel.core.languages.Language.UNKNOWN`,
+                      which causes all universal policies to run and
+                      language-specific ones to be skipped.
 
         Returns:
             A :class:`~sentinel.gatekeeper.verdict.Verdict` with the final
             decision, confidence score, summary, blocking issues, and
             warnings.
         """
-        policies: List[Policy] = self._config.policies
+        policies: List[Policy] = [
+            p for p in self._config.policies if p.applies_to(language)
+        ]
         blocking_issues: List[str] = []
         passing = 0
 
@@ -99,7 +109,7 @@ class Gatekeeper:
 
         approved = len(blocking_issues) == 0
 
-        # Confidence: fraction of policies that passed
+        # Confidence: fraction of applicable policies that passed
         confidence = passing / len(policies) if policies else 1.0
 
         if approved:
