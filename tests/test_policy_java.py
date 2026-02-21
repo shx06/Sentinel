@@ -10,25 +10,38 @@ class TestJavaLayeringPolicy(unittest.TestCase):
         config.add_policy(JavaLayeringPolicy())
         self.gatekeeper = Gatekeeper(config)
 
-    def test_java_enforces_layering(self):
-        """Test that Java projects get blocked by layering violations."""
-        guardian_report = ["Layering violation: ui -> data"]
+    def test_java_blocks_service_importing_controller(self):
+        """Java projects are blocked when a Service imports a Controller."""
+        guardian_report = [
+            "Import of 'UserController' in 'OrderService.java'"
+        ]
         verdict = self.gatekeeper.evaluate(
             guardian_report=guardian_report,
             language=Language.JAVA,
         )
         self.assertFalse(verdict.approved)
-        self.assertIn("Layering", verdict.blocking_issues[0])
+        self.assertIn(guardian_report[0], verdict.blocking_issues)
+
+    def test_java_allows_controller_importing_service(self):
+        """Java projects allow a Controller importing a Service (valid direction)."""
+        guardian_report = [
+            "Import of 'OrderService' in 'OrderController.java'"
+        ]
+        verdict = self.gatekeeper.evaluate(
+            guardian_report=guardian_report,
+            language=Language.JAVA,
+        )
+        self.assertTrue(verdict.approved)
 
     def test_python_ignores_java_layering_policy(self):
-        """Test that Python projects IGNORE the Java-specific policy."""
-        guardian_report = ["Layering violation: ui -> data"]
+        """Non-Java projects are not affected by JavaLayeringPolicy."""
+        guardian_report = [
+            "Import of 'UserController' in 'OrderService.java'"
+        ]
         verdict = self.gatekeeper.evaluate(
             guardian_report=guardian_report,
             language=Language.PYTHON,
         )
-        # Should be APPROVED because JavaLayeringPolicy
-        # applies_to(PYTHON) returns False
         self.assertTrue(verdict.approved)
 
     def test_java_approved_without_layering_violations(self):
@@ -47,6 +60,20 @@ class TestJavaLayeringPolicy(unittest.TestCase):
             language=Language.JAVA,
         )
         self.assertTrue(verdict.approved)
+
+    def test_java_blocks_multiple_violations(self):
+        """All matching violations are reported when multiple exist."""
+        guardian_report = [
+            "Import of 'UserController' in 'OrderService.java'",
+            "Import of 'PaymentController' in 'BillingService.java'",
+            "Import of 'OrderService' in 'OrderController.java'",
+        ]
+        verdict = self.gatekeeper.evaluate(
+            guardian_report=guardian_report,
+            language=Language.JAVA,
+        )
+        self.assertFalse(verdict.approved)
+        self.assertEqual(len(verdict.blocking_issues), 2)
 
 
 if __name__ == "__main__":

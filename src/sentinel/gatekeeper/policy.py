@@ -6,6 +6,7 @@ implementations that inspect pillar reports to decide whether a code
 change should be approved or rejected.
 """
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any, List, Optional
 
@@ -272,14 +273,17 @@ class StrictTypingPolicy(Policy):
 
 class JavaLayeringPolicy(Policy):
     """
-    Rejects a change when the Guardian reports layering violations.
+    Rejects a change when a Service imports a Controller in a Java project.
 
     This policy is specific to **Java** projects.  For other languages it
     is skipped automatically via :meth:`applies_to`.
 
     The *guardian_report* is expected to be a list of violation strings.
-    Entries that contain the word ``"Layering"`` are treated as blocking.
+    Entries matching the pattern ``Import of '.*Controller' in '.*Service.java'``
+    are treated as blocking layering violations.
     """
+
+    _PATTERN = re.compile(r"Import of '.*Controller' in '.*Service\.java'")
 
     def applies_to(self, language: Language) -> bool:
         """Return ``True`` only for Java."""
@@ -293,7 +297,7 @@ class JavaLayeringPolicy(Policy):
         sandbox_report: Optional[Any],
     ) -> List[str]:
         """
-        Check for layering violations from the Guardian.
+        Check for Service-imports-Controller layering violations from the Guardian.
 
         Args:
             historian_report: Unused by this policy.
@@ -307,7 +311,7 @@ class JavaLayeringPolicy(Policy):
         """
         if not guardian_report:
             return []
-        return [v for v in guardian_report if "Layering" in v]
+        return [v for v in guardian_report if self._PATTERN.search(v)]
 
 
 class PolicyConfig:
