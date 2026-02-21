@@ -26,7 +26,7 @@ _BRANCH_TYPES = frozenset(
     }
 )
 
-_PY_LANGUAGE = Language(tspython.language())
+_PY_LANGUAGE = Language(tspython.language(), "python")
 
 
 class CodeScanner:

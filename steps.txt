@@ -1,0 +1,9 @@
+python version -> 3.11.9
+
+
+
+steps to run the code - 
+
+python -m venv venv
+source venv/Scripts/activate
+python -m sentinel.cli analyze .

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentinel"
+version = "0.1.0"
+description = "Autonomous Code Guardian"
+authors = [{name = "shx06", email = "gabuyama68@gmail.com"}]
+dependencies = [
+    "gitpython",
+    "docker",
+    "astroid",  # Used by Guardian
+    "click"     # Used by CLI (if applicable) or argparse is built-in
+]
+requires-python = ">=3.8"
+
+[project.scripts]
+sentinel = "sentinel.cli:main"  # This creates the 'sentinel' command!
