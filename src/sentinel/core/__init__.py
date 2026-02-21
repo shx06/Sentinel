@@ -1,17 +1,17 @@
-"""
-Core module for Sentinel.
+# """
+# Core module for Sentinel.
 
-Contains fundamental components and shared utilities.
-"""
+# Contains fundamental components and shared utilities.
+# """
 
-from .guardian import ArchitecturalGuardian
-from .rules import FunctionComplexityRule, NoCircularDependenciesRule, Rule
-from .scanner import CodeScanner
+# # from .guardian import ArchitecturalGuardian
+# from .rules import FunctionComplexityRule, NoCircularDependenciesRule, Rule
+# from .scanner import CodeScanner
 
-__all__ = [
-    "ArchitecturalGuardian",
-    "CodeScanner",
-    "FunctionComplexityRule",
-    "NoCircularDependenciesRule",
-    "Rule",
-]
+# __all__ = [
+#     "ArchitecturalGuardian",
+#     "CodeScanner",
+#     "FunctionComplexityRule",
+#     "NoCircularDependenciesRule",
+#     "Rule",
+# ]
