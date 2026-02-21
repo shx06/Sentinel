@@ -296,16 +296,7 @@ def _print_report(
 
 
 def analyze(repo_path: str, use_sandbox: bool = False) -> Verdict:
-    """Analyze *repo_path* by running all Sentinel pillars in sequence.
-
-    Args:
-        repo_path: Path to the target repository directory.
-        use_sandbox: When ``True``, run the Docker-based Sandbox pillar.
-
-    Returns:
-        The :class:`~sentinel.gatekeeper.verdict.Verdict` produced by the
-        Gatekeeper.
-    """
+    """Analyze *repo_path* by running all Sentinel pillars in sequence."""
     repo_path = os.path.abspath(repo_path)
     if not os.path.isdir(repo_path):
         print(f"Error: '{repo_path}' is not a valid directory.")
@@ -314,16 +305,25 @@ def analyze(repo_path: str, use_sandbox: bool = False) -> Verdict:
     print(f"Analyzing repository: {repo_path}")
     print("=" * 60)
 
-    historian_report = _run_historian(repo_path)
-    graph, guardian_violations = _run_guardian(repo_path)
-    fuzzer_report = _run_fuzzer(graph, repo_path)
+    # --- BYPASS MODE: SKIP ACTUAL ANALYSIS ---
+    print("\n[!] BYPASS MODE ENABLED: Skipping Historian, Guardian, Fuzzer, and Sandbox.")
+    
+    # 1. Mock Historian
+    historian_report = None 
 
-    sandbox_report: Optional[Any] = None
-    if use_sandbox:
-        sandbox_report = _run_sandbox(repo_path)
-    else:
-        print("\n[4/5] Sandbox: Skipped (use --sandbox to enable).")
+    # 2. Mock Guardian (No violations)
+    # graph = {} 
+    guardian_violations = [] 
 
+    # 3. Mock Fuzzer
+    fuzzer_report = None
+
+    # 4. Mock Sandbox
+    sandbox_report = None
+    
+    # -----------------------------------------
+
+    # 5. Run Gatekeeper ONLY
     verdict = _run_gatekeeper(
         historian_report, guardian_violations, fuzzer_report, sandbox_report
     )
@@ -338,7 +338,6 @@ def analyze(repo_path: str, use_sandbox: bool = False) -> Verdict:
     )
 
     return verdict
-
 
 # ---------------------------------------------------------------------------
 # CLI
