@@ -1,13 +1,15 @@
 """
-Code scanner for static analysis of Python source files.
+Code scanner for static analysis of Python, Java, and TypeScript source files.
 
-Uses tree-sitter to parse Python files and extract structural information
+Uses tree-sitter to parse source files and extract structural information
 such as imports and function definitions.
 """
 
 from typing import Dict, List
 
+import tree_sitter_java as tsjava
 import tree_sitter_python as tspython
+import tree_sitter_typescript as tsts
 from tree_sitter import Language, Node, Parser
 
 # Branch node types used for cyclomatic complexity calculation
@@ -27,44 +29,92 @@ _BRANCH_TYPES = frozenset(
 )
 
 _PY_LANGUAGE = Language(tspython.language())
+_JAVA_LANGUAGE = Language(tsjava.language())
+_TS_LANGUAGE = Language(tsts.language_typescript())
+_TSX_LANGUAGE = Language(tsts.language_tsx())
+
+# Maps file extension to tree-sitter Language object
+_LANGUAGE_MAP: Dict[str, Language] = {
+    ".py": _PY_LANGUAGE,
+    ".java": _JAVA_LANGUAGE,
+    ".ts": _TS_LANGUAGE,
+    ".tsx": _TSX_LANGUAGE,
+}
 
 
 class CodeScanner:
     """
-    Static analyzer for Python source files.
+    Static analyzer for Python, Java, and TypeScript/TSX source files.
 
     Uses tree-sitter to build an AST and extract dependency and
     structural information without executing the code.
     """
 
     def __init__(self):
-        """Initialize the CodeScanner with a tree-sitter Python parser."""
-        self._parser = Parser(_PY_LANGUAGE)
+        """Initialize the CodeScanner with tree-sitter parsers for each supported language."""
+        self._parsers: Dict[str, Parser] = {
+            ext: Parser(lang) for ext, lang in _LANGUAGE_MAP.items()
+        }
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def find_imports(self, file_content: str) -> List[str]:
+    def find_imports(self, file_content: str, file_ext: str = ".py") -> List[str]:
         """
-        Extract all imported module names from Python source code.
+        Extract all imported module names from source code.
 
-        Handles both ``import X`` and ``from X import Y`` forms.
-        Returns the top-level module path being imported (e.g.
-        ``sentinel.core.scanner`` for
-        ``from sentinel.core.scanner import CodeScanner``).
+        For Python, handles both ``import X`` and ``from X import Y`` forms
+        and returns the module path (e.g. ``sentinel.core.scanner``).
+
+        For Java, returns the fully-qualified class name from each
+        ``import`` declaration (e.g. ``com.example.Foo``).
+
+        For TypeScript/TSX, returns the module specifier string from each
+        ``import … from '…'`` statement (e.g. ``./bar``).
 
         Args:
-            file_content: Python source code as a string.
+            file_content: Source code as a string.
+            file_ext: File extension used to select the parser and
+                      collection strategy (default: ``".py"``).
 
         Returns:
-            List of imported module name strings (may contain duplicates
-            if the same module is imported multiple times).
+            List of imported module/class name strings (may contain
+            duplicates if the same module is imported multiple times).
         """
-        tree = self._parser.parse(file_content.encode())
+        parser = self._parsers.get(file_ext, self._parsers[".py"])
+        tree = parser.parse(file_content.encode())
         imports: List[str] = []
-        self._collect_imports(tree.root_node, imports)
+        if file_ext == ".java":
+            self._collect_java_imports(tree.root_node, imports)
+        elif file_ext in (".ts", ".tsx"):
+            self._collect_ts_imports(tree.root_node, imports)
+        else:
+            self._collect_imports(tree.root_node, imports)
         return imports
+
+    def find_any_usages(self, file_content: str, file_ext: str = ".ts") -> List[str]:
+        """
+        Detect usages of the ``any`` type in TypeScript or TSX source code.
+
+        Scans the AST for ``predefined_type`` nodes whose text is ``any``,
+        which covers annotations such as ``let x: any`` and
+        ``function f(a: any)``.
+
+        Args:
+            file_content: TypeScript or TSX source code as a string.
+            file_ext: File extension used to select the parser
+                      (``".ts"`` or ``".tsx"``; default: ``".ts"``).
+
+        Returns:
+            List of ``"any"`` strings, one per occurrence found in the
+            source (length equals the number of ``any`` type usages).
+        """
+        parser = self._parsers.get(file_ext, self._parsers[".ts"])
+        tree = parser.parse(file_content.encode())
+        usages: List[str] = []
+        self._collect_any_usages(tree.root_node, usages)
+        return usages
 
     def get_functions(self, file_content: str) -> List[Dict]:
         """
@@ -84,7 +134,7 @@ class CodeScanner:
               - ``complexity`` (int): Approximate cyclomatic complexity
                 (number of branch points + 1).
         """
-        tree = self._parser.parse(file_content.encode())
+        tree = self._parsers[".py"].parse(file_content.encode())
         functions: List[Dict] = []
         self._collect_functions(tree.root_node, functions, nested=False)
         return functions
@@ -92,6 +142,35 @@ class CodeScanner:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _collect_java_imports(self, node: Node, imports: List[str]) -> None:
+        """Recursively traverse the AST and collect Java import declarations."""
+        if node.type == "import_declaration":
+            for child in node.children:
+                if child.type in ("scoped_identifier", "identifier"):
+                    imports.append(child.text.decode())
+        else:
+            for child in node.children:
+                self._collect_java_imports(child, imports)
+
+    def _collect_ts_imports(self, node: Node, imports: List[str]) -> None:
+        """Recursively traverse the AST and collect TypeScript import module paths."""
+        if node.type == "import_statement":
+            for child in node.children:
+                if child.type == "string":
+                    # Strip surrounding quotes from the module specifier
+                    module = child.text.decode()[1:-1]
+                    imports.append(module)
+        else:
+            for child in node.children:
+                self._collect_ts_imports(child, imports)
+
+    def _collect_any_usages(self, node: Node, usages: List[str]) -> None:
+        """Recursively traverse the AST and collect ``any`` predefined-type nodes."""
+        if node.type == "predefined_type" and node.text == b"any":
+            usages.append(node.text.decode())
+        for child in node.children:
+            self._collect_any_usages(child, usages)
 
     def _collect_imports(self, node: Node, imports: List[str]) -> None:
         """Recursively traverse the AST and collect import module names."""

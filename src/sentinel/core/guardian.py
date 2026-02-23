@@ -1,9 +1,10 @@
 """
 Architectural Guardian: analyzes project structure and enforces rules.
 
-Scans a directory tree for Python source files, builds a dependency graph
-using :class:`~sentinel.core.scanner.CodeScanner`, and validates the graph
-against a set of :class:`~sentinel.core.rules.Rule` instances.
+Scans a directory tree for Python, Java, and TypeScript source files,
+builds a dependency graph using :class:`~sentinel.core.scanner.CodeScanner`,
+and validates the graph against a set of :class:`~sentinel.core.rules.Rule`
+instances.
 """
 
 import os
@@ -11,6 +12,9 @@ from typing import Dict, List
 
 from .rules import Rule
 from .scanner import CodeScanner
+
+# File extensions that the Guardian will scan
+_SUPPORTED_EXTENSIONS = frozenset({".py", ".java", ".ts", ".tsx"})
 
 
 class ArchitecturalGuardian:
@@ -37,21 +41,24 @@ class ArchitecturalGuardian:
 
     def analyze_structure(self, path: str) -> Dict:
         """
-        Scan all Python files under *path* and build a dependency graph.
+        Scan all supported source files under *path* and build a dependency graph.
+
+        Supported file types: ``.py``, ``.java``, ``.ts``, ``.tsx``.
 
         Each entry in the returned graph is keyed by the absolute file path
         and contains:
 
-        * ``imports`` – list of module names imported by the file.
+        * ``imports`` – list of module/class names imported by the file.
         * ``functions`` – list of function info dicts (name, params,
-          complexity) as returned by
-          :meth:`~sentinel.core.scanner.CodeScanner.get_functions`.
+          complexity); populated for Python files only.
         * ``module_name`` – dotted module name derived from the file's
-          path relative to the package root (used for intra-project
-          dependency resolution).
+          path relative to the package root (Python files) or a
+          simplified path-based name (Java/TypeScript files).
+        * ``violations`` – list of pre-generated violation messages for
+          Java import layering and TypeScript ``any``-type usage.
 
         Args:
-            path: Root directory to scan.  All ``.py`` files found
+            path: Root directory to scan.  All supported source files found
                   recursively are analyzed.
 
         Returns:
@@ -61,34 +68,76 @@ class ArchitecturalGuardian:
         graph: Dict = {}
         root = os.path.abspath(path)
 
-        # Collect all .py files
-        py_files: List[str] = []
+        # Collect all supported source files
+        source_files: List[str] = []
         for dirpath, _dirnames, filenames in os.walk(root):
             for filename in filenames:
-                if filename.endswith(".py"):
-                    py_files.append(os.path.join(dirpath, filename))
+                ext = os.path.splitext(filename)[1]
+                if ext in _SUPPORTED_EXTENSIONS:
+                    source_files.append(os.path.join(dirpath, filename))
 
-        # Determine the package root (highest directory containing __init__.py)
+        # Determine the package root for Python module-name derivation
+        py_files = [f for f in source_files if f.endswith(".py")]
         package_root = self._find_package_root(root, py_files)
 
-        for file_path in py_files:
+        for file_path in source_files:
             try:
                 with open(file_path, encoding="utf-8") as fh:
                     content = fh.read()
             except OSError:
                 continue
 
-            raw_imports = self._scanner.find_imports(content)
-            functions = self._scanner.get_functions(content)
-            module_name = self._derive_module_name(file_path, package_root)
+            ext = os.path.splitext(file_path)[1]
+            filename = os.path.basename(file_path)
+            violations: List[str] = []
 
-            # Resolve relative imports to absolute module names
-            imports = self._resolve_imports(raw_imports, module_name)
+            raw_imports = self._scanner.find_imports(content, ext)
+
+            if ext == ".py":
+                functions = self._scanner.get_functions(content)
+                module_name = self._derive_module_name(file_path, package_root)
+                imports = self._resolve_imports(raw_imports, module_name)
+            else:
+                functions = []
+                # Use a simplified path-based identifier for non-Python files
+                try:
+                    module_name = os.path.relpath(file_path, root)
+                except ValueError:
+                    module_name = file_path
+                imports = raw_imports
+
+                if ext == ".java":
+                    # Emit a violation for every import so layering rules can inspect it
+                    for fq_name in imports:
+                        parts = fq_name.split(".")
+                        # Java convention: class names start with uppercase.
+                        # For static imports (e.g. com.example.Bar.method) the
+                        # last segment is a lowercase method/field; in that
+                        # case use the second-to-last segment (the class name).
+                        if parts and parts[-1] and parts[-1][0].islower() and len(parts) >= 2:
+                            class_name = parts[-2]
+                        else:
+                            class_name = parts[-1]
+                        violations.append(
+                            f"Import of '{class_name}' in '{filename}'"
+                        )
+
+                elif ext in (".ts", ".tsx"):
+                    any_usages = self._scanner.find_any_usages(content, ext)
+                    if any_usages:
+                        try:
+                            rel_path = os.path.relpath(file_path, root)
+                        except ValueError:
+                            rel_path = file_path
+                        violations.append(
+                            f"Found usage of 'any' in {rel_path}"
+                        )
 
             graph[file_path] = {
                 "imports": imports,
                 "functions": functions,
                 "module_name": module_name,
+                "violations": violations,
             }
 
         self.graph = graph
@@ -101,15 +150,24 @@ class ArchitecturalGuardian:
         :meth:`analyze_structure` must be called before this method so
         that ``self.graph`` is populated.
 
+        In addition to rule-generated violations, any pre-generated
+        ``violations`` stored per file during :meth:`analyze_structure`
+        (e.g. Java import layering messages and TypeScript ``any``-usage
+        messages) are included in the returned list.
+
         Args:
             rules: List of :class:`~sentinel.core.rules.Rule` instances
                    to evaluate.
 
         Returns:
-            Combined list of violation messages from all rules.  An empty
-            list indicates no violations were found.
+            Combined list of violation messages from all rules and
+            file-level pre-generated violations.  An empty list indicates
+            no violations were found.
         """
         violations: List[str] = []
+        # Include pre-generated file-level violations (Java/TS)
+        for info in self.graph.values():
+            violations.extend(info.get("violations", []))
         for rule in rules:
             violations.extend(rule.check(self.graph))
         return violations
