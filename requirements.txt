@@ -1,6 +1,9 @@
 langgraph
 langchain
 tree-sitter
+tree-sitter-python
+tree-sitter-java
+tree-sitter-typescript
 docker
 chromadb
 pytest
