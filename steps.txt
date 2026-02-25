@@ -2,8 +2,23 @@ python version -> 3.11.9
 
 
 
-steps to run the code - 
+steps to run the initial code code -------------------------------------------
 
 python -m venv venv
 source venv/Scripts/activate
 python -m sentinel.cli analyze .
+
+
+
+for testing ---------------------------------------------------------------
+for core logic only for pillet 5
+python -m unittest tests/test_gatekeeper_core.py
+
+for python policy
+python -m unittest tests/test_policy_python.py
+
+for TS
+python -m unittest tests/test_policy_ts.py
+
+for Java
+python -m unittest tests/test_policy_java.py
