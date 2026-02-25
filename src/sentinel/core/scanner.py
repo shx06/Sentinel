@@ -28,10 +28,15 @@ _BRANCH_TYPES = frozenset(
     }
 )
 
-_PY_LANGUAGE = Language(tspython.language())
-_JAVA_LANGUAGE = Language(tsjava.language())
-_TS_LANGUAGE = Language(tsts.language_typescript())
-_TSX_LANGUAGE = Language(tsts.language_tsx())
+def _make_language(raw) -> Language:
+    """Return a Language instance from a raw capsule or an existing Language object."""
+    return raw if isinstance(raw, Language) else Language(raw)
+
+
+_PY_LANGUAGE = _make_language(tspython.language())
+_JAVA_LANGUAGE = _make_language(tsjava.language())
+_TS_LANGUAGE = _make_language(tsts.language_typescript())
+_TSX_LANGUAGE = _make_language(tsts.language_tsx())
 
 # Maps file extension to tree-sitter Language object
 _LANGUAGE_MAP: Dict[str, Language] = {
