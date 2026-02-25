@@ -28,15 +28,26 @@ _BRANCH_TYPES = frozenset(
     }
 )
 
-def _make_language(raw) -> Language:
-    """Return a Language instance from a raw capsule or an existing Language object."""
-    return raw if isinstance(raw, Language) else Language(raw)
+def _make_language(raw, name: str) -> Language:
+    """Return a Language instance from a raw capsule or an existing Language object.
+
+    Handles multiple tree-sitter binding versions:
+    - v0.22+: ``language()`` already returns a ``Language`` instance.
+    - older:  ``Language(ptr)`` is required.
+    - some:   ``Language(ptr, name)`` is required when name is missing.
+    """
+    if isinstance(raw, Language):
+        return raw
+    try:
+        return Language(raw)
+    except TypeError:
+        return Language(raw, name)
 
 
-_PY_LANGUAGE = _make_language(tspython.language())
-_JAVA_LANGUAGE = _make_language(tsjava.language())
-_TS_LANGUAGE = _make_language(tsts.language_typescript())
-_TSX_LANGUAGE = _make_language(tsts.language_tsx())
+_PY_LANGUAGE = _make_language(tspython.language(), "python")
+_JAVA_LANGUAGE = _make_language(tsjava.language(), "java")
+_TS_LANGUAGE = _make_language(tsts.language_typescript(), "typescript")
+_TSX_LANGUAGE = _make_language(tsts.language_tsx(), "tsx")
 
 # Maps file extension to tree-sitter Language object
 _LANGUAGE_MAP: Dict[str, Language] = {
