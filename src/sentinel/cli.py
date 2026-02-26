@@ -305,25 +305,19 @@ def analyze(repo_path: str, use_sandbox: bool = False) -> Verdict:
     print(f"Analyzing repository: {repo_path}")
     print("=" * 60)
 
-    # --- BYPASS MODE: SKIP ACTUAL ANALYSIS ---
-    print("\n[!] BYPASS MODE ENABLED: Skipping Historian, Guardian, Fuzzer, and Sandbox.")
-    
-    # 1. Mock Historian
-    historian_report = None 
+    # 1. Historian
+    historian_report = _run_historian(repo_path)
 
-    # 2. Mock Guardian (No violations)
-    # graph = {} 
-    guardian_violations = [] 
+    # 2. Guardian
+    graph, guardian_violations = _run_guardian(repo_path)
 
-    # 3. Mock Fuzzer
-    fuzzer_report = None
+    # 3. Fuzzer
+    fuzzer_report = _run_fuzzer(graph, repo_path)
 
-    # 4. Mock Sandbox
-    sandbox_report = None
-    
-    # -----------------------------------------
+    # 4. Sandbox
+    sandbox_report = _run_sandbox(repo_path) if use_sandbox else None
 
-    # 5. Run Gatekeeper ONLY
+    # 5. Gatekeeper
     verdict = _run_gatekeeper(
         historian_report, guardian_violations, fuzzer_report, sandbox_report
     )
