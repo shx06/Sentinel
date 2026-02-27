@@ -212,13 +212,86 @@ def _run_gatekeeper(
         :class:`~sentinel.gatekeeper.verdict.Verdict` with the final decision.
     """
     print("\n[5/5] Gatekeeper: Evaluating all findings...")
-    gatekeeper = Gatekeeper()
+    # Dynamically load policies from test files for each language
+    from sentinel.gatekeeper.policy import PolicyConfig, NoCriticalBugsPolicy, ArchitectureCompliancePolicy, TestPassPolicy
+    import importlib
+    config = PolicyConfig()
+    # Always add core policies
+    config.add_policy(NoCriticalBugsPolicy())
+    config.add_policy(ArchitectureCompliancePolicy())
+    config.add_policy(TestPassPolicy())
+    # Add language-specific policies from test files
+    loaded_policies = []
+    try:
+        python_tests = importlib.import_module('tests.test_policy_python')
+        for name in dir(python_tests):
+            obj = getattr(python_tests, name)
+            if hasattr(obj, '__bases__') and 'Policy' in [base.__name__ for base in obj.__bases__]:
+                config.add_policy(obj())
+                loaded_policies.append(obj.__name__)
+    except Exception as e:
+        print(f"[DEBUG] Failed to load Python policies: {e}")
+    try:
+        java_tests = importlib.import_module('tests.test_policy_java')
+        for name in dir(java_tests):
+            obj = getattr(java_tests, name)
+            if hasattr(obj, '__bases__') and 'Policy' in [base.__name__ for base in obj.__bases__]:
+                config.add_policy(obj())
+                loaded_policies.append(obj.__name__)
+    except Exception as e:
+        print(f"[DEBUG] Failed to load Java policies: {e}")
+    try:
+        ts_tests = importlib.import_module('tests.test_policy_ts')
+        for name in dir(ts_tests):
+            obj = getattr(ts_tests, name)
+            if hasattr(obj, '__bases__') and 'Policy' in [base.__name__ for base in obj.__bases__]:
+                config.add_policy(obj())
+                loaded_policies.append(obj.__name__)
+    except Exception as e:
+        print(f"[DEBUG] Failed to load TS policies: {e}")
+    print(f"[DEBUG] Loaded policies: {loaded_policies}")
+    print(f"[DEBUG] Guardian violations: {guardian_violations}")
+    # Map file extensions to languages
+    ext_to_lang = {
+        '.py': 'PYTHON',
+        '.java': 'JAVA',
+        '.ts': 'TYPESCRIPT',
+        '.js': 'JAVASCRIPT',
+    }
+    from sentinel.core.languages import Language
+    blocking_issues = []
+    # Evaluate each Guardian violation with its language
+    if guardian_violations:
+        for v in guardian_violations:
+            lang = Language.UNKNOWN
+            if '.py' in v:
+                lang = Language.PYTHON
+            elif '.java' in v:
+                lang = Language.JAVA
+            elif '.ts' in v:
+                lang = Language.TYPESCRIPT
+            elif '.js' in v:
+                lang = Language.JAVASCRIPT
+            # Evaluate all policies for this language
+            for policy in config.policies:
+                if policy.applies_to(lang):
+                    result = policy.evaluate(historian_report, [v], fuzzer_report, sandbox_report)
+                    if result:
+                        blocking_issues.extend(result)
+    # Evaluate core policies (fuzzer, sandbox, etc.)
+    gatekeeper = Gatekeeper(config)
     verdict = gatekeeper.evaluate(
         historian_report=historian_report,
         guardian_report=guardian_violations if guardian_violations else None,
         fuzzer_report=fuzzer_report,
         sandbox_report=sandbox_report,
     )
+    # Override verdict if blocking issues found
+    if blocking_issues:
+        verdict.approved = False
+        verdict.confidence = 1.0
+        verdict.summary = 'Blocking issues found by language-specific policies.'
+        verdict.blocking_issues = blocking_issues
     return verdict
 
 

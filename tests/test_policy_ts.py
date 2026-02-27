@@ -1,7 +1,64 @@
+from sentinel.gatekeeper.policy import Policy
+class BlockAnyUsagePolicy(Policy):
+    """
+    Blocks TypeScript code when 'any' is used.
+    """
+    def applies_to(self, language):
+        return language is Language.TYPESCRIPT
+    def evaluate(self, historian_report, guardian_report, fuzzer_report, sandbox_report):
+        violations = []
+        if guardian_report:
+            for v in guardian_report:
+                print(f"[DEBUG] TS Policy checking violation: {v}")
+                if "found usage of 'any'" in v.lower():
+                    violations.append(f"'any' type usage detected: {v}")
+        return violations
+class BlockAnyUsagePolicy(Policy):
+    """
+    Blocks TypeScript code when 'any' is used.
+    """
+    def applies_to(self, language):
+        return language is Language.TYPESCRIPT
+    def evaluate(self, historian_report, guardian_report, fuzzer_report, sandbox_report):
+        violations = []
+        if guardian_report:
+            for v in guardian_report:
+                if "found usage of 'any'" in v.lower():
+                    violations.append(f"'any' type usage detected: {v}")
+        return violations
+from sentinel.gatekeeper.policy import Policy
+
+class BlockUnsafeTypeAssertionPolicy(Policy):
+    """
+    Blocks TypeScript code using unsafe type assertions (as any).
+    """
+    def applies_to(self, language):
+        return language is Language.TYPESCRIPT
+    def evaluate(self, historian_report, guardian_report, fuzzer_report, sandbox_report):
+        violations = []
+        if guardian_report:
+            for v in guardian_report:
+                if "as any" in v.lower():
+                    violations.append(f"Unsafe type assertion detected: {v}")
+        return violations
+
+class RequireInterfacePolicy(Policy):
+    """
+    Blocks TypeScript code not using interfaces for object types.
+    """
+    def applies_to(self, language):
+        return language is Language.TYPESCRIPT
+    def evaluate(self, historian_report, guardian_report, fuzzer_report, sandbox_report):
+        violations = []
+        if guardian_report:
+            for v in guardian_report:
+                if "missing interface" in v.lower():
+                    violations.append(f"Missing interface detected: {v}")
+        return violations
 import unittest
 from sentinel.core.languages import Language
 from sentinel.gatekeeper import Gatekeeper
-from sentinel.gatekeeper.policy import PolicyConfig, StrictTypingPolicy
+from sentinel.gatekeeper.policy import PolicyConfig, StrictTypingPolicy, Policy
 
 
 class TestStrictTypingPolicy(unittest.TestCase):

@@ -1,7 +1,69 @@
+from sentinel.gatekeeper.policy import Policy
+class BlockServiceImportControllerPolicy(Policy):
+    """
+    Blocks Java code when a Service imports a Controller.
+    """
+    def applies_to(self, language):
+        return language is Language.JAVA
+    def evaluate(self, historian_report, guardian_report, fuzzer_report, sandbox_report):
+        violations = []
+        import re
+        pattern = re.compile(r"Import of '.*Controller' in '.*Service\.java'")
+        if guardian_report:
+            for v in guardian_report:
+                print(f"[DEBUG] Java Policy checking violation: {v}")
+                if pattern.search(v):
+                    violations.append(f"Service importing Controller detected: {v}")
+        return violations
+import re
+
+class BlockServiceImportControllerPolicy(Policy):
+    """
+    Blocks Java code when a Service imports a Controller.
+    """
+    def applies_to(self, language):
+        return language is Language.JAVA
+    def evaluate(self, historian_report, guardian_report, fuzzer_report, sandbox_report):
+        violations = []
+        pattern = re.compile(r"Import of '.*Controller' in '.*Service\.java'")
+        if guardian_report:
+            for v in guardian_report:
+                if pattern.search(v):
+                    violations.append(f"Service importing Controller detected: {v}")
+        return violations
+from sentinel.gatekeeper.policy import Policy
+
+class BlockPublicFieldPolicy(Policy):
+    """
+    Blocks Java code with public fields (not constants).
+    """
+    def applies_to(self, language):
+        return language is Language.JAVA
+    def evaluate(self, historian_report, guardian_report, fuzzer_report, sandbox_report):
+        violations = []
+        if guardian_report:
+            for v in guardian_report:
+                if "public" in v.lower() and "field" in v.lower():
+                    violations.append(f"Public field detected: {v}")
+        return violations
+
+class RequireJavadocPolicy(Policy):
+    """
+    Blocks Java code missing Javadoc comments for classes.
+    """
+    def applies_to(self, language):
+        return language is Language.JAVA
+    def evaluate(self, historian_report, guardian_report, fuzzer_report, sandbox_report):
+        violations = []
+        if guardian_report:
+            for v in guardian_report:
+                if "missing javadoc" in v.lower():
+                    violations.append(f"Missing Javadoc detected: {v}")
+        return violations
 import unittest
 from sentinel.core.languages import Language
 from sentinel.gatekeeper import Gatekeeper
-from sentinel.gatekeeper.policy import PolicyConfig, JavaLayeringPolicy
+from sentinel.gatekeeper.policy import PolicyConfig, JavaLayeringPolicy, Policy
 
 
 class TestJavaLayeringPolicy(unittest.TestCase):

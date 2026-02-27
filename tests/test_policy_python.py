@@ -1,3 +1,32 @@
+from sentinel.gatekeeper.policy import Policy
+
+class BlockForbiddenImportsPolicy(Policy):
+    """
+    Blocks Python code that imports forbidden modules (os, sys).
+    """
+    def applies_to(self, language):
+        return language is Language.PYTHON
+    def evaluate(self, historian_report, guardian_report, fuzzer_report, sandbox_report):
+        violations = []
+        if guardian_report:
+            for v in guardian_report:
+                if "import os" in v.lower() or "import sys" in v.lower():
+                    violations.append(f"Forbidden import detected: {v}")
+        return violations
+
+class BlockTODOCommentPolicy(Policy):
+    """
+    Blocks Python code containing TODO comments.
+    """
+    def applies_to(self, language):
+        return language is Language.PYTHON
+    def evaluate(self, historian_report, guardian_report, fuzzer_report, sandbox_report):
+        violations = []
+        if guardian_report:
+            for v in guardian_report:
+                if "todo" in v.lower():
+                    violations.append(f"TODO comment detected: {v}")
+        return violations
 import unittest
 from sentinel.core.languages import Language
 from sentinel.gatekeeper import Gatekeeper
