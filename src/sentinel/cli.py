@@ -18,9 +18,11 @@ import sys
 from typing import Any, Dict, List, Optional, Tuple
 
 from sentinel.core.guardian import ArchitecturalGuardian
+from sentinel.core.languages import Language
 from sentinel.core.rules import FunctionComplexityRule, NoCircularDependenciesRule
 from sentinel.fuzzer import AdversarialFuzzer, FuzzReport
 from sentinel.gatekeeper import Gatekeeper, Verdict
+from sentinel.gatekeeper.policy import PolicyConfig
 from sentinel.historian import ContextualHistorian
 
 # Smoke-test script run inside the Docker sandbox.
@@ -193,13 +195,90 @@ def _run_sandbox(repo_path: str) -> Optional[Any]:
         return None
 
 
+def _detect_language(graph: Dict) -> Language:
+    """
+    Detect the dominant language of the repository from the Guardian graph.
+
+    Counts files by extension and returns the language with the most files.
+    For mixed repos, the order of preference is Python > Java > TypeScript.
+
+    Args:
+        graph: Dependency graph from :class:`ArchitecturalGuardian`.
+
+    Returns:
+        The dominant :class:`~sentinel.core.languages.Language`.
+    """
+    counts: Dict[Language, int] = {
+        Language.PYTHON: 0,
+        Language.JAVA: 0,
+        Language.TYPESCRIPT: 0,
+    }
+    ext_map = {
+        ".py": Language.PYTHON,
+        ".java": Language.JAVA,
+        ".ts": Language.TYPESCRIPT,
+        ".tsx": Language.TYPESCRIPT,
+    }
+    for file_path in graph:
+        ext = os.path.splitext(file_path)[1].lower()
+        lang = ext_map.get(ext)
+        if lang:
+            counts[lang] += 1
+
+    if not any(counts.values()):
+        return Language.UNKNOWN
+
+    return max(counts, key=lambda l: counts[l])
+
+
+def _build_policy_config(languages: List[Language]) -> PolicyConfig:
+    """
+    Build a :class:`PolicyConfig` that combines policies for all detected languages.
+
+    All policies come from :mod:`sentinel.gatekeeper.policy` — the single
+    source of truth for policy definitions.  Test files in ``tests/``
+    contain test cases that *verify* these policies; they do not define them.
+
+    Args:
+        languages: List of languages found in the repository.
+
+    Returns:
+        A :class:`PolicyConfig` with universal + per-language policies for every
+        detected language.
+    """
+    config = PolicyConfig.default()   # universal: NoCriticalBugs, ArchCompliance, TestPass
+
+    for lang in languages:
+        if lang is Language.PYTHON:
+            for policy in PolicyConfig.for_python().policies:
+                config.add_policy(policy)
+        elif lang is Language.JAVA:
+            for policy in PolicyConfig.for_java().policies:
+                config.add_policy(policy)
+        elif lang is Language.TYPESCRIPT:
+            for policy in PolicyConfig.for_typescript().policies:
+                config.add_policy(policy)
+
+    return config
+
+
 def _run_gatekeeper(
     historian_report: Optional[Any],
     guardian_violations: List[str],
     fuzzer_report: Optional[FuzzReport],
     sandbox_report: Optional[Any],
+    graph: Optional[Dict] = None,
 ) -> Verdict:
-    """Run the Gatekeeper pillar and return the final Verdict.
+    """
+    Run the Gatekeeper pillar and return the final Verdict.
+
+    Detects which languages are present in the repository (via the Guardian
+    graph), selects the matching set of policies from
+    :mod:`sentinel.gatekeeper.policy`, and evaluates all findings.
+
+    Policies are defined in ``src/sentinel/gatekeeper/policy.py``.
+    Test files in ``tests/`` contain test cases that *verify* those
+    policies — they are not loaded at runtime.
 
     Args:
         historian_report: Stats dict from the Historian (may be ``None``).
@@ -207,91 +286,62 @@ def _run_gatekeeper(
         fuzzer_report: Aggregated :class:`FuzzReport` (may be ``None``).
         sandbox_report: :class:`~sentinel.sandbox.runner.RunResult` (may be
                         ``None``).
+        graph: Guardian dependency graph used for language detection.
 
     Returns:
         :class:`~sentinel.gatekeeper.verdict.Verdict` with the final decision.
     """
     print("\n[5/5] Gatekeeper: Evaluating all findings...")
-    # Dynamically load policies from test files for each language
-    from sentinel.gatekeeper.policy import PolicyConfig, NoCriticalBugsPolicy, ArchitectureCompliancePolicy, TestPassPolicy
-    import importlib
-    config = PolicyConfig()
-    # Always add core policies
-    config.add_policy(NoCriticalBugsPolicy())
-    config.add_policy(ArchitectureCompliancePolicy())
-    config.add_policy(TestPassPolicy())
-    # Add language-specific policies from test files
-    loaded_policies = []
-    try:
-        python_tests = importlib.import_module('tests.test_policy_python')
-        for name in dir(python_tests):
-            obj = getattr(python_tests, name)
-            if hasattr(obj, '__bases__') and 'Policy' in [base.__name__ for base in obj.__bases__]:
-                config.add_policy(obj())
-                loaded_policies.append(obj.__name__)
-    except Exception as e:
-        print(f"[DEBUG] Failed to load Python policies: {e}")
-    try:
-        java_tests = importlib.import_module('tests.test_policy_java')
-        for name in dir(java_tests):
-            obj = getattr(java_tests, name)
-            if hasattr(obj, '__bases__') and 'Policy' in [base.__name__ for base in obj.__bases__]:
-                config.add_policy(obj())
-                loaded_policies.append(obj.__name__)
-    except Exception as e:
-        print(f"[DEBUG] Failed to load Java policies: {e}")
-    try:
-        ts_tests = importlib.import_module('tests.test_policy_ts')
-        for name in dir(ts_tests):
-            obj = getattr(ts_tests, name)
-            if hasattr(obj, '__bases__') and 'Policy' in [base.__name__ for base in obj.__bases__]:
-                config.add_policy(obj())
-                loaded_policies.append(obj.__name__)
-    except Exception as e:
-        print(f"[DEBUG] Failed to load TS policies: {e}")
-    print(f"[DEBUG] Loaded policies: {loaded_policies}")
-    print(f"[DEBUG] Guardian violations: {guardian_violations}")
-    # Map file extensions to languages
-    ext_to_lang = {
-        '.py': 'PYTHON',
-        '.java': 'JAVA',
-        '.ts': 'TYPESCRIPT',
-        '.js': 'JAVASCRIPT',
-    }
-    from sentinel.core.languages import Language
-    blocking_issues = []
-    # Evaluate each Guardian violation with its language
-    if guardian_violations:
-        for v in guardian_violations:
-            lang = Language.UNKNOWN
-            if '.py' in v:
-                lang = Language.PYTHON
-            elif '.java' in v:
-                lang = Language.JAVA
-            elif '.ts' in v:
-                lang = Language.TYPESCRIPT
-            elif '.js' in v:
-                lang = Language.JAVASCRIPT
-            # Evaluate all policies for this language
-            for policy in config.policies:
-                if policy.applies_to(lang):
-                    result = policy.evaluate(historian_report, [v], fuzzer_report, sandbox_report)
-                    if result:
-                        blocking_issues.extend(result)
-    # Evaluate core policies (fuzzer, sandbox, etc.)
+
+    # --- Detect languages present in the repo ---
+    detected_langs: List[Language] = []
+    if graph:
+        ext_map = {
+            ".py": Language.PYTHON,
+            ".java": Language.JAVA,
+            ".ts": Language.TYPESCRIPT,
+            ".tsx": Language.TYPESCRIPT,
+        }
+        seen: set = set()
+        for file_path in graph:
+            ext = os.path.splitext(file_path)[1].lower()
+            lang = ext_map.get(ext)
+            if lang and lang not in seen:
+                detected_langs.append(lang)
+                seen.add(lang)
+
+    if not detected_langs:
+        detected_langs = [Language.UNKNOWN]
+
+    dominant = _detect_language(graph) if graph else Language.UNKNOWN
+    print(f"  Languages detected : {[l.name for l in detected_langs]}")
+    print(f"  Dominant language  : {dominant.name}")
+
+    # --- Build policy config from policy.py (not from test files) ---
+    config = _build_policy_config(detected_langs)
+    policy_names = [type(p).__name__ for p in config.policies]
+    print(f"  Policies active    : {len(policy_names)}")
+    for name in policy_names:
+        print(f"    • {name}")
+
+    # --- Run the Gatekeeper ---
     gatekeeper = Gatekeeper(config)
     verdict = gatekeeper.evaluate(
         historian_report=historian_report,
         guardian_report=guardian_violations if guardian_violations else None,
         fuzzer_report=fuzzer_report,
         sandbox_report=sandbox_report,
+        language=dominant,
     )
-    # Override verdict if blocking issues found
-    if blocking_issues:
-        verdict.approved = False
-        verdict.confidence = 1.0
-        verdict.summary = 'Blocking issues found by language-specific policies.'
-        verdict.blocking_issues = blocking_issues
+
+    decision = "APPROVED" if verdict.approved else "REJECTED"
+    print(f"  Decision           : {decision}")
+    print(f"  Confidence         : {verdict.confidence:.0%}")
+    if verdict.blocking_issues:
+        print(f"  Blocking issues    : {len(verdict.blocking_issues)}")
+        for issue in verdict.blocking_issues:
+            print(f"    [!] {issue}")
+
     return verdict
 
 
@@ -368,11 +418,37 @@ def _print_report(
 # ---------------------------------------------------------------------------
 
 
+import tempfile
+import shutil
+import re
+import subprocess
+
+def _is_github_url(path: str) -> bool:
+    return bool(re.match(r"https://github.com/[^/]+/[^/]+/?$", path.strip()))
+
+def _clone_github_repo(url: str) -> str:
+    temp_dir = tempfile.mkdtemp(prefix="sentinel_github_")
+    print(f"Cloning GitHub repo {url} to {temp_dir} ...")
+    try:
+        subprocess.run(["git", "clone", "--depth=1", url, temp_dir], check=True)
+    except Exception as e:
+        print(f"Error: Failed to clone repo: {e}")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        sys.exit(1)
+    return temp_dir
+
 def analyze(repo_path: str, use_sandbox: bool = False) -> Verdict:
-    """Analyze *repo_path* by running all Sentinel pillars in sequence."""
+    """Analyze *repo_path* (local path or GitHub URL) by running all Sentinel pillars in sequence."""
+    cleanup_dir = None
+    orig_input = repo_path
+    if _is_github_url(repo_path):
+        repo_path = _clone_github_repo(repo_path)
+        cleanup_dir = repo_path
     repo_path = os.path.abspath(repo_path)
     if not os.path.isdir(repo_path):
-        print(f"Error: '{repo_path}' is not a valid directory.")
+        print(f"Error: '{orig_input}' is not a valid directory or GitHub repo.")
+        if cleanup_dir:
+            shutil.rmtree(cleanup_dir, ignore_errors=True)
         sys.exit(1)
 
     print(f"Analyzing repository: {repo_path}")
@@ -392,7 +468,8 @@ def analyze(repo_path: str, use_sandbox: bool = False) -> Verdict:
 
     # 5. Gatekeeper
     verdict = _run_gatekeeper(
-        historian_report, guardian_violations, fuzzer_report, sandbox_report
+        historian_report, guardian_violations, fuzzer_report, sandbox_report,
+        graph=graph,
     )
 
     _print_report(
@@ -431,8 +508,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     analyze_parser.add_argument(
         "repo_path",
-        metavar="path/to/repo",
-        help="Path to the repository to analyze.",
+        metavar="path/to/repo_or_github_url",
+        help="Path to the repository to analyze (local path or GitHub URL).",
     )
     analyze_parser.add_argument(
         "--sandbox",

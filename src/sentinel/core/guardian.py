@@ -16,6 +16,9 @@ from .scanner import CodeScanner
 # File extensions that the Guardian will scan
 _SUPPORTED_EXTENSIONS = frozenset({".py", ".java", ".ts", ".tsx"})
 
+# Default max lines per function before flagging it
+_DEFAULT_MAX_FUNCTION_LINES = 50
+
 
 class ArchitecturalGuardian:
     """
@@ -97,6 +100,28 @@ class ArchitecturalGuardian:
                 functions = self._scanner.get_functions(content)
                 module_name = self._derive_module_name(file_path, package_root)
                 imports = self._resolve_imports(raw_imports, module_name)
+
+                # --- Python-specific violation checks ---
+
+                # TODO / FIXME markers
+                for comment in self._scanner.find_todo_comments(content):
+                    violations.append(
+                        f"[TODO] TODO/FIXME comment in '{filename}': {comment}"
+                    )
+
+                # Missing docstrings on public functions / classes
+                for item in self._scanner.find_missing_docstrings(content):
+                    violations.append(
+                        f"[DOCSTRING] Missing docstring in "
+                        f"'{module_name}::{item['name']}' ({item['kind']})"
+                    )
+
+                # Overly long functions (line-count proxy via start/end_point)
+                tree_py = self._scanner._parsers[".py"].parse(content.encode())
+                self._collect_long_functions(
+                    tree_py.root_node, violations, filename, module_name
+                )
+
             else:
                 functions = []
                 # Use a simplified path-based identifier for non-Python files
@@ -107,13 +132,9 @@ class ArchitecturalGuardian:
                 imports = raw_imports
 
                 if ext == ".java":
-                    # Emit a violation for every import so layering rules can inspect it
+                    # --- Java layering: emit per-import violation ---
                     for fq_name in imports:
                         parts = fq_name.split(".")
-                        # Java convention: class names start with uppercase.
-                        # For static imports (e.g. com.example.Bar.method) the
-                        # last segment is a lowercase method/field; in that
-                        # case use the second-to-last segment (the class name).
                         if parts and parts[-1] and parts[-1][0].islower() and len(parts) >= 2:
                             class_name = parts[-2]
                         else:
@@ -122,7 +143,32 @@ class ArchitecturalGuardian:
                             f"Import of '{class_name}' in '{filename}'"
                         )
 
+                    # --- Java-specific violation checks ---
+                    for field in self._scanner.find_public_fields(content):
+                        violations.append(
+                            f"[PUBLIC_FIELD] Public non-constant field "
+                            f"'{field}' in '{filename}'"
+                        )
+
+                    for type_name in self._scanner.find_missing_javadoc(content):
+                        violations.append(
+                            f"[JAVADOC] Missing Javadoc for class "
+                            f"'{type_name}' in '{filename}'"
+                        )
+
+                    for naming_v in self._scanner.find_java_naming_violations(content):
+                        violations.append(
+                            f"[NAMING] {naming_v} in '{filename}'"
+                        )
+
+                    # TODO markers in Java (// TODO …)
+                    for comment in self._scanner.find_todo_comments(content):
+                        violations.append(
+                            f"[TODO] TODO/FIXME comment in '{filename}': {comment}"
+                        )
+
                 elif ext in (".ts", ".tsx"):
+                    # --- TypeScript: any-type usage ---
                     any_usages = self._scanner.find_any_usages(content, ext)
                     if any_usages:
                         try:
@@ -131,6 +177,29 @@ class ArchitecturalGuardian:
                             rel_path = file_path
                         violations.append(
                             f"Found usage of 'any' in {rel_path}"
+                        )
+
+                    # --- TypeScript-specific violation checks ---
+                    try:
+                        rel_path = os.path.relpath(file_path, root)
+                    except ValueError:
+                        rel_path = file_path
+
+                    for _ in self._scanner.find_unsafe_type_assertions(content, ext):
+                        violations.append(
+                            f"[UNSAFE_CAST] Unsafe 'as any' assertion in '{rel_path}'"
+                        )
+                        break  # one violation per file is enough to flag it
+
+                    if self._scanner.find_console_logs(content, ext):
+                        violations.append(
+                            f"[CONSOLE_LOG] console.log() usage in '{rel_path}'"
+                        )
+
+                    # TODO markers in TypeScript
+                    for comment in self._scanner.find_todo_comments(content):
+                        violations.append(
+                            f"[TODO] TODO/FIXME comment in '{filename}': {comment}"
                         )
 
             graph[file_path] = {
@@ -287,3 +356,38 @@ class ArchitecturalGuardian:
             module_name = ""
 
         return module_name
+
+    @staticmethod
+    def _collect_long_functions(
+        node: object,
+        violations: List[str],
+        filename: str,
+        module_name: str,
+        max_lines: int = _DEFAULT_MAX_FUNCTION_LINES,
+    ) -> None:
+        """
+        Walk a tree-sitter AST and emit violations for overly long functions.
+
+        Args:
+            node: Root AST node (tree-sitter ``Node``).
+            violations: Accumulator list for violation strings.
+            filename: Base file name used in violation messages.
+            module_name: Dotted module name used in violation messages.
+            max_lines: Maximum allowed line count per function.
+        """
+        if node.type == "function_definition":  # type: ignore[attr-defined]
+            name_node = node.child_by_field_name("name")  # type: ignore[attr-defined]
+            name = name_node.text.decode() if name_node else "<unknown>"
+            start_line = node.start_point[0]  # type: ignore[attr-defined]
+            end_line = node.end_point[0]  # type: ignore[attr-defined]
+            line_count = end_line - start_line + 1
+            if line_count > max_lines:
+                violations.append(
+                    f"[LONG_FUNCTION] Function '{module_name}::{name}' in "
+                    f"'{filename}' is {line_count} lines long "
+                    f"(max allowed: {max_lines})"
+                )
+        for child in node.children:  # type: ignore[attr-defined]
+            ArchitecturalGuardian._collect_long_functions(
+                child, violations, filename, module_name, max_lines
+            )

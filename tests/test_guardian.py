@@ -68,7 +68,8 @@ class TestGuardianJavaScanning(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             java_path = os.path.join(tmpdir, "Foo.java")
             with open(java_path, "w") as f:
-                f.write("public class Foo {}\n")
+                # Include Javadoc so the new [JAVADOC] rule does not trigger.
+                f.write("/** A well-documented class. */\npublic class Foo {}\n")
             self.guardian.analyze_structure(tmpdir)
             violations = self.guardian.check_rules([])
             self.assertEqual(violations, [])

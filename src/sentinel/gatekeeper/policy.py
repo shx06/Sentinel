@@ -314,6 +314,209 @@ class JavaLayeringPolicy(Policy):
         return [v for v in guardian_report if self._PATTERN.search(v)]
 
 
+# ---------------------------------------------------------------------------
+# Python-specific policies
+# ---------------------------------------------------------------------------
+
+class FunctionComplexityPolicy(Policy):
+    """
+    Rejects a change when the Guardian reports functions with excessive
+    cyclomatic complexity.
+
+    This policy is specific to **Python** projects.
+    """
+
+    applies_to_language = Language.PYTHON
+
+    def applies_to(self, language: Language) -> bool:
+        return language is Language.PYTHON
+
+    def evaluate(
+        self,
+        historian_report: Optional[Any],
+        guardian_report: Optional[Any],
+        fuzzer_report: Optional[Any],
+        sandbox_report: Optional[Any],
+    ) -> List[str]:
+        if not guardian_report:
+            return []
+        return [v for v in guardian_report if "has complexity" in v]
+
+
+class TODOCommentPolicy(Policy):
+    """
+    Rejects a change that contains TODO / FIXME / HACK / XXX marker comments.
+
+    Applies to **Python** files.  Java and TypeScript have dedicated
+    per-language handling via their own rule chain; this policy focuses on
+    blocking Python PRs that contain unresolved work markers.
+    """
+
+    def applies_to(self, language: Language) -> bool:
+        return language is Language.PYTHON
+
+    def evaluate(
+        self,
+        historian_report: Optional[Any],
+        guardian_report: Optional[Any],
+        fuzzer_report: Optional[Any],
+        sandbox_report: Optional[Any],
+    ) -> List[str]:
+        if not guardian_report:
+            return []
+        return [v for v in guardian_report if "[TODO]" in v]
+
+
+class RequireDocstringPolicy(Policy):
+    """
+    Rejects a change when public Python functions or classes lack docstrings.
+
+    This policy is specific to **Python** projects.
+    """
+
+    def applies_to(self, language: Language) -> bool:
+        return language is Language.PYTHON
+
+    def evaluate(
+        self,
+        historian_report: Optional[Any],
+        guardian_report: Optional[Any],
+        fuzzer_report: Optional[Any],
+        sandbox_report: Optional[Any],
+    ) -> List[str]:
+        if not guardian_report:
+            return []
+        return [v for v in guardian_report if "[DOCSTRING]" in v]
+
+
+# ---------------------------------------------------------------------------
+# Java-specific policies
+# ---------------------------------------------------------------------------
+
+class PublicFieldPolicy(Policy):
+    """
+    Rejects a change when Java source files contain non-constant public fields.
+
+    Exposes mutable state directly and breaks encapsulation.  Constants
+    (``public static final``) are permitted and not flagged.
+
+    This policy is specific to **Java** projects.
+    """
+
+    def applies_to(self, language: Language) -> bool:
+        return language is Language.JAVA
+
+    def evaluate(
+        self,
+        historian_report: Optional[Any],
+        guardian_report: Optional[Any],
+        fuzzer_report: Optional[Any],
+        sandbox_report: Optional[Any],
+    ) -> List[str]:
+        if not guardian_report:
+            return []
+        return [v for v in guardian_report if "[PUBLIC_FIELD]" in v]
+
+
+class MissingJavadocPolicy(Policy):
+    """
+    Rejects a change when Java public type declarations lack Javadoc comments.
+
+    This policy is specific to **Java** projects.
+    """
+
+    def applies_to(self, language: Language) -> bool:
+        return language is Language.JAVA
+
+    def evaluate(
+        self,
+        historian_report: Optional[Any],
+        guardian_report: Optional[Any],
+        fuzzer_report: Optional[Any],
+        sandbox_report: Optional[Any],
+    ) -> List[str]:
+        if not guardian_report:
+            return []
+        return [v for v in guardian_report if "[JAVADOC]" in v]
+
+
+class JavaNamingConventionPolicy(Policy):
+    """
+    Rejects a change when Java naming conventions are violated.
+
+    Types must be PascalCase; methods must be camelCase.
+
+    This policy is specific to **Java** projects.
+    """
+
+    def applies_to(self, language: Language) -> bool:
+        return language is Language.JAVA
+
+    def evaluate(
+        self,
+        historian_report: Optional[Any],
+        guardian_report: Optional[Any],
+        fuzzer_report: Optional[Any],
+        sandbox_report: Optional[Any],
+    ) -> List[str]:
+        if not guardian_report:
+            return []
+        return [v for v in guardian_report if "[NAMING]" in v]
+
+
+# ---------------------------------------------------------------------------
+# TypeScript-specific policies
+# ---------------------------------------------------------------------------
+
+class NoUnsafeTypeAssertionPolicy(Policy):
+    """
+    Rejects a change that contains ``as any`` unsafe type assertions.
+
+    This policy is specific to **TypeScript** projects.
+    """
+
+    def applies_to(self, language: Language) -> bool:
+        return language is Language.TYPESCRIPT
+
+    def evaluate(
+        self,
+        historian_report: Optional[Any],
+        guardian_report: Optional[Any],
+        fuzzer_report: Optional[Any],
+        sandbox_report: Optional[Any],
+    ) -> List[str]:
+        if not guardian_report:
+            return []
+        return [v for v in guardian_report if "[UNSAFE_CAST]" in v]
+
+
+class NoConsoleLogPolicy(Policy):
+    """
+    Rejects a change that still contains ``console.log / .warn / .error``
+    debug calls.
+
+    This policy is specific to **TypeScript** projects.
+    """
+
+    def applies_to(self, language: Language) -> bool:
+        return language is Language.TYPESCRIPT
+
+    def evaluate(
+        self,
+        historian_report: Optional[Any],
+        guardian_report: Optional[Any],
+        fuzzer_report: Optional[Any],
+        sandbox_report: Optional[Any],
+    ) -> List[str]:
+        if not guardian_report:
+            return []
+        return [v for v in guardian_report if "[CONSOLE_LOG]" in v]
+
+
+# ---------------------------------------------------------------------------
+# Policy registry
+# ---------------------------------------------------------------------------
+
 class PolicyConfig:
     """
     Registry of enabled :class:`Policy` instances.
@@ -328,19 +531,15 @@ class PolicyConfig:
         config.add_policy(TestPassPolicy())
 
     A default configuration with all standard policies enabled is available
-    via :meth:`default`.
+    via :meth:`default`.  Language-specific suites are available via
+    :meth:`for_python`, :meth:`for_java`, and :meth:`for_typescript`.
     """
 
     def __init__(self) -> None:
         self._policies: List[Policy] = []
 
     def add_policy(self, policy: Policy) -> None:
-        """
-        Register a policy.
-
-        Args:
-            policy: A :class:`Policy` instance to add.
-        """
+        """Register a policy."""
         self._policies.append(policy)
 
     @property
@@ -351,14 +550,63 @@ class PolicyConfig:
     @classmethod
     def default(cls) -> "PolicyConfig":
         """
-        Create a :class:`PolicyConfig` with all standard policies enabled.
-
-        Returns:
-            A :class:`PolicyConfig` containing :class:`NoCriticalBugsPolicy`,
-            :class:`ArchitectureCompliancePolicy`, and :class:`TestPassPolicy`.
+        Create a :class:`PolicyConfig` with the universal cross-language
+        policies enabled (fuzzer crashes, architecture compliance, sandbox).
         """
         config = cls()
         config.add_policy(NoCriticalBugsPolicy())
         config.add_policy(ArchitectureCompliancePolicy())
         config.add_policy(TestPassPolicy())
+        return config
+
+    @classmethod
+    def for_python(cls) -> "PolicyConfig":
+        """
+        Create a :class:`PolicyConfig` with all Python-specific policies.
+
+        Includes:
+        * :class:`NoCircularDependenciesPolicy`
+        * :class:`FunctionComplexityPolicy`
+        * :class:`TODOCommentPolicy`
+        * :class:`RequireDocstringPolicy`
+        """
+        config = cls()
+        config.add_policy(NoCircularDependenciesPolicy())
+        config.add_policy(FunctionComplexityPolicy())
+        config.add_policy(TODOCommentPolicy())
+        config.add_policy(RequireDocstringPolicy())
+        return config
+
+    @classmethod
+    def for_java(cls) -> "PolicyConfig":
+        """
+        Create a :class:`PolicyConfig` with all Java-specific policies.
+
+        Includes:
+        * :class:`JavaLayeringPolicy`
+        * :class:`PublicFieldPolicy`
+        * :class:`MissingJavadocPolicy`
+        * :class:`JavaNamingConventionPolicy`
+        """
+        config = cls()
+        config.add_policy(JavaLayeringPolicy())
+        config.add_policy(PublicFieldPolicy())
+        config.add_policy(MissingJavadocPolicy())
+        config.add_policy(JavaNamingConventionPolicy())
+        return config
+
+    @classmethod
+    def for_typescript(cls) -> "PolicyConfig":
+        """
+        Create a :class:`PolicyConfig` with all TypeScript-specific policies.
+
+        Includes:
+        * :class:`StrictTypingPolicy`
+        * :class:`NoUnsafeTypeAssertionPolicy`
+        * :class:`NoConsoleLogPolicy`
+        """
+        config = cls()
+        config.add_policy(StrictTypingPolicy())
+        config.add_policy(NoUnsafeTypeAssertionPolicy())
+        config.add_policy(NoConsoleLogPolicy())
         return config

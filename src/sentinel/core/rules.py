@@ -156,3 +156,153 @@ class FunctionComplexityRule(Rule):
                         f"{complexity} (max allowed: {self.max_complexity})"
                     )
         return violations
+
+
+# ---------------------------------------------------------------------------
+# Python-specific rules
+# ---------------------------------------------------------------------------
+
+class TODOCommentRule(Rule):
+    """
+    Rule that flags TODO / FIXME / HACK / XXX marker comments in Python files.
+
+    Such markers typically indicate unfinished work and should not be merged
+    into the main branch.
+    """
+
+    def check(self, graph: Dict) -> List[str]:
+        violations: List[str] = []
+        for file_path, info in graph.items():
+            for v in info.get("violations", []):
+                if "[TODO]" in v:
+                    violations.append(v)
+        return violations
+
+
+class RequireDocstringRule(Rule):
+    """
+    Rule that flags public Python functions and classes without a docstring.
+
+    Private names (single leading underscore) and dunder methods other than
+    ``__init__`` are excluded from the check.
+    """
+
+    def check(self, graph: Dict) -> List[str]:
+        violations: List[str] = []
+        for file_path, info in graph.items():
+            if not file_path.endswith(".py"):
+                continue
+            for v in info.get("violations", []):
+                if "[DOCSTRING]" in v:
+                    violations.append(v)
+        return violations
+
+
+class MaxFunctionLinesRule(Rule):
+    """
+    Rule that flags Python functions exceeding a maximum line count.
+
+    Long functions are hard to read and test.  The default threshold is
+    50 lines.
+    """
+
+    DEFAULT_MAX_LINES = 50
+
+    def __init__(self, max_lines: int = DEFAULT_MAX_LINES):
+        self.max_lines = max_lines
+
+    def check(self, graph: Dict) -> List[str]:
+        violations: List[str] = []
+        for file_path, info in graph.items():
+            for v in info.get("violations", []):
+                if "[LONG_FUNCTION]" in v:
+                    violations.append(v)
+        return violations
+
+
+# ---------------------------------------------------------------------------
+# Java-specific rules
+# ---------------------------------------------------------------------------
+
+class PublicFieldRule(Rule):
+    """
+    Rule that flags non-constant public instance fields in Java files.
+
+    Exposes mutable state directly and breaks encapsulation.  Constants
+    (``public static final``) are permitted.
+    """
+
+    def check(self, graph: Dict) -> List[str]:
+        violations: List[str] = []
+        for file_path, info in graph.items():
+            for v in info.get("violations", []):
+                if "[PUBLIC_FIELD]" in v:
+                    violations.append(v)
+        return violations
+
+
+class MissingJavadocRule(Rule):
+    """
+    Rule that flags Java public type declarations without a Javadoc comment.
+    """
+
+    def check(self, graph: Dict) -> List[str]:
+        violations: List[str] = []
+        for file_path, info in graph.items():
+            for v in info.get("violations", []):
+                if "[JAVADOC]" in v:
+                    violations.append(v)
+        return violations
+
+
+class JavaNamingConventionRule(Rule):
+    """
+    Rule that flags Java naming-convention violations.
+
+    * Types (class / interface / enum) must be PascalCase.
+    * ``public`` / ``protected`` / ``private`` methods must be camelCase.
+    """
+
+    def check(self, graph: Dict) -> List[str]:
+        violations: List[str] = []
+        for file_path, info in graph.items():
+            for v in info.get("violations", []):
+                if "[NAMING]" in v:
+                    violations.append(v)
+        return violations
+
+
+# ---------------------------------------------------------------------------
+# TypeScript-specific rules
+# ---------------------------------------------------------------------------
+
+class NoUnsafeTypeAssertionRule(Rule):
+    """
+    Rule that flags TypeScript ``as any`` unsafe type-assertion expressions.
+    """
+
+    def check(self, graph: Dict) -> List[str]:
+        violations: List[str] = []
+        for file_path, info in graph.items():
+            for v in info.get("violations", []):
+                if "[UNSAFE_CAST]" in v:
+                    violations.append(v)
+        return violations
+
+
+class NoConsoleLogRule(Rule):
+    """
+    Rule that flags ``console.log / .warn / .error / .debug`` calls in
+    TypeScript / TSX source files.
+
+    Debug logging should be removed before code is merged to the main
+    branch.
+    """
+
+    def check(self, graph: Dict) -> List[str]:
+        violations: List[str] = []
+        for file_path, info in graph.items():
+            for v in info.get("violations", []):
+                if "[CONSOLE_LOG]" in v:
+                    violations.append(v)
+        return violations
