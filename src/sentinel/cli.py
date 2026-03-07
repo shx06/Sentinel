@@ -11,6 +11,11 @@ Usage::
 """
 
 import argparse
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv is optional, but recommended for .env support
 import importlib.util
 import inspect
 import os
@@ -37,6 +42,7 @@ _SANDBOX_SMOKE_TEST = "print('Sentinel sandbox check passed')"
 def _run_historian(repo_path: str) -> Optional[Any]:
     """Run the Contextual Historian pillar and return its stats."""
     print("\n[1/5] Historian: Learning from repository history...")
+    import traceback
     try:
         historian = ContextualHistorian(repo_path)
         stats = historian.learn_repository(max_commits=100)
@@ -44,6 +50,7 @@ def _run_historian(repo_path: str) -> Optional[Any]:
         return stats
     except Exception as exc:  # noqa: BLE001
         print(f"  Warning: Historian encountered an error: {exc}")
+        traceback.print_exc()
         return None
 
 
@@ -437,8 +444,12 @@ def _clone_github_repo(url: str) -> str:
         sys.exit(1)
     return temp_dir
 
-def analyze(repo_path: str, use_sandbox: bool = False) -> Verdict:
-    """Analyze *repo_path* (local path or GitHub URL) by running all Sentinel pillars in sequence."""
+def analyze(repo_path: str, use_sandbox: bool = False, skip_historian: bool = False, policy_source: str = None, use_llm: bool = False) -> Verdict:
+    """Analyze *repo_path* (local path or GitHub URL) by running all Sentinel pillars in sequence.
+    skip_historian: if True, skip the Historian pillar and ChromaDB dependency.
+    policy_source: optional path or URL to load additional/dynamic policies.
+    use_llm: if True, use LLM/AI for policy suggestions and violation explanations.
+    """
     cleanup_dir = None
     orig_input = repo_path
     if _is_github_url(repo_path):
@@ -454,8 +465,19 @@ def analyze(repo_path: str, use_sandbox: bool = False) -> Verdict:
     print(f"Analyzing repository: {repo_path}")
     print("=" * 60)
 
-    # 1. Historian
-    historian_report = _run_historian(repo_path)
+    # 1. Historian (optional)
+    historian_report = None
+    if not skip_historian:
+        try:
+            historian_report = _run_historian(repo_path)
+        except ImportError as e:
+            print(f"  [Sentinel] ChromaDB not installed or failed to import: {e}\n  Skipping Historian pillar.")
+            historian_report = None
+        except Exception as e:
+            print(f"  [Sentinel] Historian failed: {e}\n  Skipping Historian pillar.")
+            historian_report = None
+    else:
+        print("  [Sentinel] Historian pillar skipped by user request.")
 
     # 2. Guardian
     graph, guardian_violations = _run_guardian(repo_path)
@@ -466,7 +488,38 @@ def analyze(repo_path: str, use_sandbox: bool = False) -> Verdict:
     # 4. Sandbox
     sandbox_report = _run_sandbox(repo_path) if use_sandbox else None
 
-    # 5. Gatekeeper
+    # 5. Gatekeeper (dynamic/AI policy loading)
+    # --- Dynamic/AI policy loading hook ---
+    if policy_source:
+        print(f"  [Sentinel] Loading additional policies from: {policy_source}")
+        # TODO: Implement dynamic policy loading from file/URL/plugin
+    if use_llm:
+        print("  [Sentinel] Using LLM/AI for policy suggestions and violation explanations...")
+        try:
+            from sentinel.llm_utils import call_openai_gpt4
+            # Summarize violations and ask for policy suggestions
+            if guardian_violations:
+                prompt = (
+                    "You are an expert code reviewer and static analysis policy designer. "
+                    "Given the following code violations, suggest new static analysis policies/rules that Sentinel could add to catch similar issues in the future. "
+                    "Also, briefly explain the most critical violations and how to remediate them.\n\n"
+                    f"Violations:\n" + '\n'.join(str(v) for v in guardian_violations[:20])
+                )
+                messages = [
+                    {"role": "system", "content": "You are a world-class static analysis and code security expert."},
+                    {"role": "user", "content": prompt}
+                ]
+                llm_response = call_openai_gpt4(messages)
+                if llm_response:
+                    print("\n--- LLM/AI Policy Suggestions & Explanations ---")
+                    print(llm_response)
+                else:
+                    print("[Sentinel LLM] No response from LLM or API key missing.")
+        except ImportError:
+            print("[Sentinel LLM] LLM utility not available. Skipping LLM integration.")
+        except Exception as e:
+            print(f"[Sentinel LLM] LLM integration failed: {e}")
+
     verdict = _run_gatekeeper(
         historian_report, guardian_violations, fuzzer_report, sandbox_report,
         graph=graph,
@@ -517,6 +570,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Run critical tests inside an isolated Docker sandbox.",
     )
+    analyze_parser.add_argument(
+        "--skip-historian",
+        action="store_true",
+        default=False,
+        help="Skip the Historian pillar and ChromaDB dependency.",
+    )
+    analyze_parser.add_argument(
+        "--policy-source",
+        type=str,
+        default=None,
+        help="Path or URL to load additional/dynamic policies.",
+    )
+    analyze_parser.add_argument(
+        "--use-llm",
+        action="store_true",
+        default=False,
+        help="Use external LLM/AI for policy suggestions and violation explanations.",
+    )
 
     return parser
 
@@ -531,7 +602,13 @@ def main(argv: Optional[List[str]] = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "analyze":
-        verdict = analyze(args.repo_path, use_sandbox=args.sandbox)
+        verdict = analyze(
+            args.repo_path,
+            use_sandbox=args.sandbox,
+            skip_historian=args.skip_historian,
+            policy_source=args.policy_source,
+            use_llm=args.use_llm,
+        )
         sys.exit(0 if verdict.approved else 1)
 
 

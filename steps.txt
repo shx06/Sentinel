@@ -1,24 +1,65 @@
-python version -> 3.11.9
+
+Python version: 3.11.9
+
+================ Sentinel Setup & Usage Guide ================
+
+1. Clone or copy Sentinel to your workspace.
+
+2. (Optional but recommended) Create and activate a virtual environment:
+	python -m venv venv
+	source venv/Scripts/activate  # On Windows
+	# or
+	source venv/bin/activate      # On Linux/Mac
 
 
+3. Install dependencies:
+	pip install -r requirements.txt
+	# If you want Historian/ChromaDB features, ensure chromadb is installed:
+	pip install chromadb
+	# For .env support (recommended for LLM integration):
+	pip install python-dotenv
+9. For LLM/AI integration:
+		- Add your OpenAI API key to a .env file in the project root:
+			OPENAI_API_KEY=sk-...
+		- Sentinel will automatically load this key if python-dotenv is installed.
+		- Alternatively, export the variable in your shell before running Sentinel.
 
-steps to run the initial code code -------------------------------------------
+4. Run Sentinel analysis on a project folder:
+	python -m sentinel.cli analyze <target_folder>
 
-python -m venv venv
-source venv/Scripts/activate
-python -m sentinel.cli analyze .
+	# To skip Historian (no ChromaDB required):
+	python -m sentinel.cli analyze <target_folder> --skip-historian
 
+	# To enable LLM/AI hooks for policy suggestions (future feature):
+	python -m sentinel.cli analyze <target_folder> --use-llm
 
+	# To load additional/dynamic policies (future feature):
+	python -m sentinel.cli analyze <target_folder> --policy-source <path_or_url>
 
-for testing ---------------------------------------------------------------
-for core logic only for pillet 5
-python -m unittest tests/test_gatekeeper_core.py
+5. Example for demo_project/src:
+	python -m sentinel.cli analyze demo_project/src --skip-historian --use-llm
 
-for python policy
-python -m unittest tests/test_policy_python.py
+6. For running tests:
+	# Core logic (Gatekeeper only)
+	python -m unittest tests/test_gatekeeper_core.py
 
-for TS
-python -m unittest tests/test_policy_ts.py
+	# Python policy tests
+	python -m unittest tests/test_policy_python.py
 
-for Java
-python -m unittest tests/test_policy_java.py
+	# TypeScript policy tests
+	python -m unittest tests/test_policy_ts.py
+
+	# Java policy tests
+	python -m unittest tests/test_policy_java.py
+
+7. Upgrading Sentinel:
+	- Pull latest code from repo or update files as needed.
+	- To add new policies, edit or add to src/sentinel/gatekeeper/policy.py or use --policy-source (future).
+	- To enable AI/LLM integration, set up API keys and configure hooks in cli.py (future).
+
+8. Notes:
+	- Historian/ChromaDB is optional; skip with --skip-historian if not needed.
+	- Guardian and Gatekeeper pillars work on any folder with supported code (Python, Java, TypeScript).
+	- LLM/AI integration is pluggable and can be expanded as new models/APIs become available.
+
+============================================================
