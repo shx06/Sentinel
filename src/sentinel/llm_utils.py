@@ -1,16 +1,18 @@
+from dotenv import load_dotenv
+load_dotenv()
 import os
 import requests
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
 # Utility to call OpenAI's GPT-4 for policy suggestions or violation explanations
 def call_openai_gpt4(messages, model="gpt-3.5-turbo", temperature=0.2, max_tokens=512):
-    if not OPENAI_API_KEY:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
         print("[Sentinel LLM] No OpenAI API key found. Skipping LLM call.")
         return None
     headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
     payload = {

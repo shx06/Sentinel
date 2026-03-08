@@ -58,6 +58,19 @@ Python version: 3.11.9
 	- To enable AI/LLM integration, set up API keys and configure hooks in cli.py (future).
 
 8. Notes:
+
+================ CURRENT PROGRESS SNAPSHOT (March 8, 2026) ================
+
+- Sentinel policy engine and LLM integration are working.
+- .env loading for OpenAI API key is fixed and tested.
+- LLM feedback loop is triggered, but OpenAI is rate-limited (429 error).
+- Policy testing on demo_project/src works and detects violations.
+- Next steps: Implement dynamic policy loading and saving LLM-suggested policies to tests/.
+
+# To resume from this point:
+# 1. Ensure your .env file has a valid (not rate-limited) OpenAI or Gemini API key.
+# 2. Run: python -m sentinel.cli analyze demo_project/src --use-llm
+# 3. Continue with dynamic policy loading and LLM policy saving features.
 	- Historian/ChromaDB is optional; skip with --skip-historian if not needed.
 	- Guardian and Gatekeeper pillars work on any folder with supported code (Python, Java, TypeScript).
 	- LLM/AI integration is pluggable and can be expanded as new models/APIs become available.
