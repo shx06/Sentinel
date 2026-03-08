@@ -1,4 +1,4 @@
-﻿"""
+"""
 Java policy tests for the Principled Gatekeeper.
 
 Covers every Java-specific policy that Sentinel enforces when performing

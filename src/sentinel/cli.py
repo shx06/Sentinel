@@ -496,25 +496,27 @@ def analyze(repo_path: str, use_sandbox: bool = False, skip_historian: bool = Fa
     if use_llm:
         print("  [Sentinel] Using LLM/AI for policy suggestions and violation explanations...")
         try:
-            from sentinel.llm_utils import call_openai_gpt4
-            # Summarize violations and ask for policy suggestions
-            if guardian_violations:
-                prompt = (
-                    "You are an expert code reviewer and static analysis policy designer. "
-                    "Given the following code violations, suggest new static analysis policies/rules that Sentinel could add to catch similar issues in the future. "
-                    "Also, briefly explain the most critical violations and how to remediate them.\n\n"
-                    f"Violations:\n" + '\n'.join(str(v) for v in guardian_violations[:20])
-                )
-                messages = [
-                    {"role": "system", "content": "You are a world-class static analysis and code security expert."},
-                    {"role": "user", "content": prompt}
-                ]
+            guardian_prompt = (
+                "You are an expert code reviewer and static analysis policy designer. "
+                "Given the following code violations, suggest new static analysis policies/rules that Sentinel could add to catch similar issues in the future. "
+                "Also, briefly explain the most critical violations and how to remediate them.\n\n"
+                f"Violations:\n" + '\n'.join(str(v) for v in guardian_violations[:20])
+            )
+            messages = [
+                {"role": "system", "content": "You are a world-class static analysis and code security expert."},
+                {"role": "user", "content": guardian_prompt}
+            ]
+            if os.getenv("GEMINI_API_KEY"):
+                from sentinel.gemini_utils import call_gemini
+                llm_response = call_gemini(messages)
+            else:
+                from sentinel.llm_utils import call_openai_gpt4
                 llm_response = call_openai_gpt4(messages)
-                if llm_response:
-                    print("\n--- LLM/AI Policy Suggestions & Explanations ---")
-                    print(llm_response)
-                else:
-                    print("[Sentinel LLM] No response from LLM or API key missing.")
+            if llm_response:
+                print("\n--- LLM/AI Policy Suggestions & Explanations ---")
+                print(llm_response)
+            else:
+                print("[Sentinel LLM] No response from LLM or API key missing.")
         except ImportError:
             print("[Sentinel LLM] LLM utility not available. Skipping LLM integration.")
         except Exception as e:

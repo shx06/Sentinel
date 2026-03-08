@@ -1,4 +1,4 @@
-﻿"""
+"""
 TypeScript policy tests for the Principled Gatekeeper.
 
 Covers every TypeScript-specific policy that Sentinel enforces when
