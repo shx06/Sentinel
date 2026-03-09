@@ -1,3 +1,6 @@
+# Required for Cohere LLM integration
+cohere
+# Required for .env support (LLM API keys)
 langgraph
 langchain
 tree-sitter

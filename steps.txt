@@ -18,11 +18,19 @@ Python version: 3.11.9
 	pip install chromadb
 	# For .env support (recommended for LLM integration):
 	pip install python-dotenv
+
 9. For LLM/AI integration:
-		- Add your OpenAI API key to a .env file in the project root:
-			OPENAI_API_KEY=sk-...
-		- Sentinel will automatically load this key if python-dotenv is installed.
-		- Alternatively, export the variable in your shell before running Sentinel.
+	- Add your LLM API keys to a .env file in the project root:
+		OPENAI_API_KEY=sk-...
+		GEMINI_API_KEY=...
+		COHERE_API_KEY=...
+	- Sentinel will automatically load these keys if python-dotenv is installed.
+	- Alternatively, export the variables in your shell before running Sentinel.
+	- For Cohere integration:
+		- Ensure the cohere Python SDK is installed in your active environment:
+			pip install cohere
+		- If you see '[Sentinel LLM] Cohere SDK not installed', restart VS Code or your terminal to reload the environment.
+		- Sentinel uses the official Cohere SDK (ClientV2) for LLM calls.
 
 4. Run Sentinel analysis on a project folder:
 	python -m sentinel.cli analyze <target_folder>
@@ -36,8 +44,10 @@ Python version: 3.11.9
 	# To load additional/dynamic policies (future feature):
 	python -m sentinel.cli analyze <target_folder> --policy-source <path_or_url>
 
+
 5. Example for demo_project/src:
 	python -m sentinel.cli analyze demo_project/src --skip-historian --use-llm
+
 
 6. For running tests:
 	# Core logic (Gatekeeper only)
@@ -51,6 +61,10 @@ Python version: 3.11.9
 
 	# Java policy tests
 	python -m unittest tests/test_policy_java.py
+
+7. Test Reports:
+	- After running Sentinel analysis, the full terminal output is saved in tests/reports/ as <test_name>_<date>.txt.
+	- This includes all steps, debug logs, violations, LLM/AI suggestions, and verdicts for traceability.
 
 7. Upgrading Sentinel:
 	- Pull latest code from repo or update files as needed.

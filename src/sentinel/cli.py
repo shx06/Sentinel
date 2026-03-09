@@ -506,7 +506,10 @@ def analyze(repo_path: str, use_sandbox: bool = False, skip_historian: bool = Fa
                 {"role": "system", "content": "You are a world-class static analysis and code security expert."},
                 {"role": "user", "content": guardian_prompt}
             ]
-            if os.getenv("GEMINI_API_KEY"):
+            if os.getenv("COHERE_API_KEY"):
+                from sentinel.cohere_utils import call_cohere
+                llm_response = call_cohere(messages)
+            elif os.getenv("GEMINI_API_KEY"):
                 from sentinel.gemini_utils import call_gemini
                 llm_response = call_gemini(messages)
             else:
