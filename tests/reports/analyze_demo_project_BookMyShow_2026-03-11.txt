@@ -1,0 +1,79 @@
+/**
+ * Sentinel Analysis Report
+ * Project: BookMyShow
+ * Date: 2026-03-11
+ * Command: python -m sentinel.cli analyze demo_project/BookMyShow/src/main/java --use-llm
+ */
+
+============================================================
+[1/5] Historian: Learning from repository history...
+  Warning: Historian encountered an error: Not a git repository.
+
+[2/5] Guardian: Scanning codebase for rule violations...
+  Files analyzed: 36
+  Violations found: 179
+  (See below for details)
+
+[3/5] Fuzzer: Discovering functions and running fuzz tests...
+  No functions discovered for fuzzing.
+
+[4/5] LLM/AI Policy Suggestions...
+  [Sentinel LLM][DEBUG] call_cohere invoked.
+  [Sentinel LLM][DEBUG] COHERE_API_KEY present: True
+  [Sentinel LLM][DEBUG] cohere SDK imported: True
+  [Sentinel LLM] LLM suggestions processed.
+
+[5/5] Gatekeeper: Evaluating all findings...
+  Languages detected : ['JAVA']
+  Dominant language  : JAVA
+  Policies active    : 7
+    • NoCriticalBugsPolicy
+    • ArchitectureCompliancePolicy
+    • TestPassPolicy
+    • JavaLayeringPolicy
+    • PublicFieldPolicy
+    • MissingJavadocPolicy
+    • JavaNamingConventionPolicy
+  Decision           : REJECTED
+  Confidence         : 86%
+  Blocking issues    : 36
+
+--- Guardian Violations (excerpt) ---
+[!] [JAVADOC] Missing Javadoc for class 'BookMyShowApplication' in 'BookMyShowApplication.java'
+[!] [JAVADOC] Missing Javadoc for class 'BookingController' in 'BookingController.java'
+[!] [JAVADOC] Missing Javadoc for class 'UserController' in 'UserController.java'
+[!] [JAVADOC] Missing Javadoc for class 'BookMovieRequestDTO' in 'BookMovieRequestDTO.java'
+[!] [JAVADOC] Missing Javadoc for class 'BookMovieResponseDTO' in 'BookMovieResponseDTO.java'
+[!] [JAVADOC] Missing Javadoc for class 'CommonResponse' in 'CommonResponse.java'
+[!] [JAVADOC] Missing Javadoc for class 'LoginUserResponseDTO' in 'LoginUserResponseDTO.java'
+[!] [JAVADOC] Missing Javadoc for class 'ResponseStatus' in 'ResponseStatus.java'
+[!] [JAVADOC] Missing Javadoc for class 'SignupUserRequestDTO' in 'SignupUserRequestDTO.java'
+[!] [JAVADOC] Missing Javadoc for class 'SignupUserResponseDTO' in 'SignupUserResponseDTO.java'
+[!] [JAVADOC] Missing Javadoc for class 'BaseModel' in 'BaseModel.java'
+[!] [JAVADOC] Missing Javadoc for class 'Booking' in 'Booking.java'
+[!] [JAVADOC] Missing Javadoc for class 'BookingStatus' in 'BookingStatus.java'
+[!] [JAVADOC] Missing Javadoc for class 'Movie' in 'Movie.java'
+[!] [JAVADOC] Missing Javadoc for class 'Payment' in 'Payment.java'
+[!] [JAVADOC] Missing Javadoc for class 'PaymentGateway' in 'PaymentGateway.java'
+[!] [JAVADOC] Missing Javadoc for class 'PaymentMode' in 'PaymentMode.java'
+[!] [JAVADOC] Missing Javadoc for class 'PaymentStatus' in 'PaymentStatus.java'
+[!] [JAVADOC] Missing Javadoc for class 'Region' in 'Region.java'
+[!] [JAVADOC] Missing Javadoc for class 'Screen' in 'Screen.java'
+[!] [JAVADOC] Missing Javadoc for class 'Seat' in 'Seat.java'
+[!] [JAVADOC] Missing Javadoc for class 'SeatType' in 'SeatType.java'
+[!] [JAVADOC] Missing Javadoc for class 'Show' in 'Show.java'
+[!] [JAVADOC] Missing Javadoc for class 'ShowSeat' in 'ShowSeat.java'
+[!] [JAVADOC] Missing Javadoc for class 'ShowSeatStatus' in 'ShowSeatStatus.java'
+[!] [JAVADOC] Missing Javadoc for class 'ShowSeatType' in 'ShowSeatType.java'
+[!] [JAVADOC] Missing Javadoc for class 'Theatre' in 'Theatre.java'
+[!] [JAVADOC] Missing Javadoc for class 'User' in 'User.java'
+[!] [JAVADOC] Missing Javadoc for class 'BookingRepo' in 'BookingRepo.java'
+[!] [JAVADOC] Missing Javadoc for class 'ShowRepo' in 'ShowRepo.java'
+[!] [JAVADOC] Missing Javadoc for class 'ShowSeatRepo' in 'ShowSeatRepo.java'
+[!] [JAVADOC] Missing Javadoc for class 'ShowSeatTypeRepo' in 'ShowSeatTypeRepo.java'
+[!] [JAVADOC] Missing Javadoc for class 'UserRepo' in 'UserRepo.java'
+[!] [JAVADOC] Missing Javadoc for class 'BookingAmountCalculationService' in 'BookingAmountCalculationService.java'
+[!] [JAVADOC] Missing Javadoc for class 'BookingService' in 'BookingService.java'
+[!] [JAVADOC] Missing Javadoc for class 'UserService' in 'UserService.java'
+
+--- End of Report ---

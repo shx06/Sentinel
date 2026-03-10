@@ -1,6 +1,7 @@
 
 Python version: 3.11.9
 
+
 ================ Sentinel Setup & Usage Guide ================
 
 1. Clone or copy Sentinel to your workspace.
@@ -12,12 +13,25 @@ Python version: 3.11.9
 	source venv/bin/activate      # On Linux/Mac
 
 
+
 3. Install dependencies:
 	pip install -r requirements.txt
 	# If you want Historian/ChromaDB features, ensure chromadb is installed:
 	pip install chromadb
 	# For .env support (recommended for LLM integration):
 	pip install python-dotenv
+
+4. Project Automation (Makefile):
+	- Use the Makefile for short, npm-like commands:
+		make analyze-bookmyshow
+		make autogrow
+		make test
+		make end-to-end-test PROJECT=<project_path>
+	- The end-to-end-test command will:
+		1. Run Sentinel analysis (with LLM) on the given project path
+		2. Save a report in tests/reports/analyze_<project>_<date>.txt
+		3. Run the policy autogrow script to update policy tests
+
 
 9. For LLM/AI integration:
 	- Add your LLM API keys to a .env file in the project root:
@@ -62,9 +76,11 @@ Python version: 3.11.9
 	# Java policy tests
 	python -m unittest tests/test_policy_java.py
 
+
 7. Test Reports:
-	- After running Sentinel analysis, the full terminal output is saved in tests/reports/ as <test_name>_<date>.txt.
+	- After running Sentinel analysis (or make end-to-end-test), a report is saved in tests/reports/ as analyze_<project>_<date>.txt.
 	- This includes all steps, debug logs, violations, LLM/AI suggestions, and verdicts for traceability.
+	- Policy tests are automatically updated with new violations or LLM-suggested rules after each run.
 
 7. Upgrading Sentinel:
 	- Pull latest code from repo or update files as needed.

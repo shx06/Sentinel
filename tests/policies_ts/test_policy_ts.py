@@ -312,3 +312,28 @@ class TestTypeScriptEndToEnd(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_autogen__CONSOLE_LOG__console_log___usage_in__ts(self):
+            '''Auto-generated test for: [CONSOLE_LOG] console.log() usage in 'ts\utils.ts''''
+        # TODO: Implement test logic for this violation/rule
+        self.fail('Auto-generated test: implement logic for: [CONSOLE_LOG] console.log() usage in 'ts\utils.ts'')
+
+    def test_autogen_Found_usage_of__any__in_ts_utils_ts(self):
+            '''Auto-generated test for: Found usage of 'any' in ts\utils.ts'''
+        # TODO: Implement test logic for this violation/rule
+        self.fail('Auto-generated test: implement logic for: Found usage of 'any' in ts\utils.ts')
+
+    def test_autogen__CONSOLE_LOG__console_log___usage_in__ts(self):
+            '''Auto-generated test for: [CONSOLE_LOG] console.log() usage in 'ts\main.ts''''
+        # TODO: Implement test logic for this violation/rule
+        self.fail('Auto-generated test: implement logic for: [CONSOLE_LOG] console.log() usage in 'ts\main.ts'')
+
+    def test_autogen_Prohibit_the_use_of_the__any__type_in_Ty(self):
+            '''Auto-generated test for: Prohibit the use of the `any` type in TypeScript.'''
+        # TODO: Implement test logic for this violation/rule
+        self.fail('Auto-generated test: implement logic for: Prohibit the use of the `any` type in TypeScript.')
+
+    def test_autogen_Flag_all__console_log____statements_in_p(self):
+            '''Auto-generated test for: Flag all `console.log()` statements in production code.'''
+        # TODO: Implement test logic for this violation/rule
+        self.fail('Auto-generated test: implement logic for: Flag all `console.log()` statements in production code.')
