@@ -38,11 +38,11 @@ class TestGatekeeperRouting(unittest.TestCase):
 
     def test_unknown_language_skips_language_specific_policies(self):
         """Language.UNKNOWN causes language-specific policies to be skipped."""
-        from sentinel.gatekeeper.policy import NoCircularDependenciesPolicy
+        from sentinel.gatekeeper.policy import policy_from_name
         config = PolicyConfig()
-        config.add_policy(NoCircularDependenciesPolicy())
+        config.add_policy(policy_from_name("NoCircularDependenciesPolicy", Language.PYTHON))
         gatekeeper = Gatekeeper(config)
-        # NoCircularDependenciesPolicy only applies to PYTHON, so UNKNOWN is approved
+        # A PYTHON policy should be skipped when the language is UNKNOWN.
         verdict = gatekeeper.evaluate(
             guardian_report=["Circular dependency detected: a -> b -> a"],
             language=Language.UNKNOWN,

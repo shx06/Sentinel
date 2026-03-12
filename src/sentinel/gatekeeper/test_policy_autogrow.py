@@ -1,87 +1,88 @@
-"""
-Sentinel AutoGrow Script
+"""Update tests-backed Sentinel policy catalogs from LLM suggestions."""
 
-This script parses the latest Sentinel analysis report and ensures that any new violation or LLM-suggested policy is covered by a test in the relevant test_policy file. If not, it appends a template test for future implementation.
-"""
-import os
+from __future__ import annotations
+
+import argparse
+import json
 import re
+import sys
 from pathlib import Path
-
-# Paths
-REPORT_PATH = Path('tests/reports/analyze_demo_project_src_2026-03-09.txt')
-POLICY_TEST_PATHS = {
-    'JAVA': Path('tests/policies_java/test_policy_java.py'),
-    'TYPESCRIPT': Path('tests/policies_ts/test_policy_ts.py'),
-    'PYTHON': Path('tests/policies_python/test_policy_python.py'),
-}
-
-# Violation regex patterns for extraction
-VIOLATION_PATTERNS = [
-    re.compile(r"\[!\] (.+)")
-]
-
-# LLM suggestion section header
-LLM_HEADER = '--- LLM/AI Policy Suggestions & Explanations ---'
+from typing import Any, Dict, List
 
 
-def extract_violations(report_text):
-    """Extract unique violation messages from the report."""
-    violations = set()
-    for pattern in VIOLATION_PATTERNS:
-        violations.update(pattern.findall(report_text))
-    return violations
+SRC_ROOT = Path(__file__).resolve().parents[2]
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from sentinel.gatekeeper.test_policy_source import update_policy_specs
 
 
-def extract_llm_suggestions(report_text):
-    """Extract LLM-suggested rules from the report."""
-    if LLM_HEADER not in report_text:
+LLM_JSON_HEADER = "--- LLM Policy Suggestions JSON ---"
+LLM_JSON_FOOTER = "--- End LLM Policy Suggestions JSON ---"
+
+
+def _strip_code_fence(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?", "", stripped).strip()
+        if stripped.endswith("```"):
+            stripped = stripped[:-3].strip()
+    return stripped
+
+
+def extract_llm_policy_specs(report_text: str) -> List[Dict[str, Any]]:
+    """Parse the JSON policy suggestion block from a report."""
+    if LLM_JSON_HEADER not in report_text:
         return []
-    llm_section = report_text.split(LLM_HEADER, 1)[1]
-    suggestions = re.findall(r"\*\*Rule\*\*: (.+)", llm_section)
-    return suggestions
+
+    section = report_text.split(LLM_JSON_HEADER, 1)[1]
+    if LLM_JSON_FOOTER in section:
+        section = section.split(LLM_JSON_FOOTER, 1)[0]
+
+    payload = _strip_code_fence(section)
+    if not payload:
+        return []
+
+    data = json.loads(payload)
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        raise ValueError("LLM policy suggestion block must contain a JSON list.")
+    return [spec for spec in data if isinstance(spec, dict)]
 
 
-def test_exists(test_path, violation):
-    """Check if a violation or rule is already covered in the test file."""
-    with open(test_path, encoding='utf-8') as f:
-        content = f.read().lower()
-    return violation.lower() in content
+def apply_policy_updates(specs: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    """Merge *specs* into the tests-backed policy catalogs."""
+    return update_policy_specs(specs)
 
 
-def append_test(test_path, violation):
-    """Append a template test for the new violation/rule."""
-    test_name = re.sub(r'[^a-zA-Z0-9]', '_', violation)[:40]
-    test_code = f"""
-    def test_autogen_{test_name}(self):
-            '''Auto-generated test for: {violation}'''
-        # TODO: Implement test logic for this violation/rule
-        self.fail('Auto-generated test: implement logic for: {violation}')
-"""
-    with open(test_path, 'a', encoding='utf-8') as f:
-        f.write(test_code)
-    print(f"[AutoGrow] Appended test for: {violation}")
+def main(argv: List[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Merge LLM policy suggestions into tests-backed POLICY_SPECS catalogs.")
+    parser.add_argument("--report", required=True, help="Path to a Sentinel end-to-end report file.")
+    args = parser.parse_args(argv)
+
+    report_path = Path(args.report)
+    if not report_path.is_file():
+        print(f"[AutoGrow] Report not found: {report_path}")
+        return 1
+
+    report_text = report_path.read_text(encoding="utf-8")
+    specs = extract_llm_policy_specs(report_text)
+    if not specs:
+        print("[AutoGrow] No LLM policy suggestions found in report.")
+        return 0
+
+    added = apply_policy_updates(specs)
+    if not added:
+        print("[AutoGrow] No new policy specs were added.")
+        return 0
+
+    for language, entries in added.items():
+        print(f"[AutoGrow] Added {len(entries)} policy spec(s) for {language}.")
+        for entry in entries:
+            print(f"[AutoGrow]   - {entry['name']}")
+    return 0
 
 
-def main():
-    report_text = REPORT_PATH.read_text(encoding='utf-8')
-    violations = extract_violations(report_text)
-    llm_suggestions = extract_llm_suggestions(report_text)
-
-    # For demo, assign all to JAVA/TS based on keywords
-    for violation in violations.union(llm_suggestions):
-        if 'java' in violation.lower():
-            test_path = POLICY_TEST_PATHS['JAVA']
-        elif 'ts' in violation.lower() or 'typescript' in violation.lower() or 'console.log' in violation.lower():
-            test_path = POLICY_TEST_PATHS['TYPESCRIPT']
-        elif 'python' in violation.lower():
-            test_path = POLICY_TEST_PATHS['PYTHON']
-        else:
-            # Default to JAVA for demo
-            test_path = POLICY_TEST_PATHS['JAVA']
-        if not test_exists(test_path, violation):
-            append_test(test_path, violation)
-        else:
-            print(f"[AutoGrow] Already covered: {violation}")
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    raise SystemExit(main())

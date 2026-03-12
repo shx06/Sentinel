@@ -11,6 +11,7 @@ Usage::
 """
 
 import argparse
+import io
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -18,8 +19,16 @@ except ImportError:
     pass  # dotenv is optional, but recommended for .env support
 import importlib.util
 import inspect
+import json
 import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
 import sys
+import tempfile
+from contextlib import redirect_stdout
+from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 from sentinel.core.guardian import ArchitecturalGuardian
@@ -28,6 +37,8 @@ from sentinel.core.rules import FunctionComplexityRule, NoCircularDependenciesRu
 from sentinel.fuzzer import AdversarialFuzzer, FuzzReport
 from sentinel.gatekeeper import Gatekeeper, Verdict
 from sentinel.gatekeeper.policy import PolicyConfig
+from sentinel.gatekeeper.test_policy_autogrow import apply_policy_updates
+from sentinel.gatekeeper.test_policy_source import load_policy_specs_for_languages
 from sentinel.historian import ContextualHistorian
 
 # Smoke-test script run inside the Docker sandbox.
@@ -54,13 +65,13 @@ def _run_historian(repo_path: str) -> Optional[Any]:
         return None
 
 
-def _run_guardian(repo_path: str) -> Tuple[Dict, List[str]]:
+def _run_guardian(repo_path: str, step_label: str = "[2/5]") -> Tuple[Dict, List[str]]:
     """Run the Architectural Guardian pillar.
 
     Returns:
         Tuple of (graph dict, violations list).
     """
-    print("\n[2/5] Guardian: Scanning codebase for rule violations...")
+    print(f"\n{step_label} Guardian: Scanning codebase for rule violations...")
     guardian = ArchitecturalGuardian()
     graph = guardian.analyze_structure(repo_path)
     rules = [NoCircularDependenciesRule(), FunctionComplexityRule()]
@@ -275,6 +286,8 @@ def _run_gatekeeper(
     fuzzer_report: Optional[FuzzReport],
     sandbox_report: Optional[Any],
     graph: Optional[Dict] = None,
+    config: Optional[PolicyConfig] = None,
+    step_label: str = "[5/5]",
 ) -> Verdict:
     """
     Run the Gatekeeper pillar and return the final Verdict.
@@ -298,7 +311,7 @@ def _run_gatekeeper(
     Returns:
         :class:`~sentinel.gatekeeper.verdict.Verdict` with the final decision.
     """
-    print("\n[5/5] Gatekeeper: Evaluating all findings...")
+    print(f"\n{step_label} Gatekeeper: Evaluating all findings...")
 
     # --- Detect languages present in the repo ---
     detected_langs: List[Language] = []
@@ -325,7 +338,7 @@ def _run_gatekeeper(
     print(f"  Dominant language  : {dominant.name}")
 
     # --- Build policy config from policy.py (not from test files) ---
-    config = _build_policy_config(detected_langs)
+    config = config or _build_policy_config(detected_langs)
     policy_names = [type(p).__name__ for p in config.policies]
     print(f"  Policies active    : {len(policy_names)}")
     for name in policy_names:
@@ -409,7 +422,7 @@ def _print_report(
         print("  (skipped or unavailable)")
 
     print("\n--- Gatekeeper Verdict ---")
-    decision = "APPROVED ✓" if verdict.approved else "REJECTED ✗"
+    decision = "APPROVED" if verdict.approved else "REJECTED"
     print(f"  Decision   : {decision}")
     print(f"  Confidence : {verdict.confidence:.0%}")
     print(f"  Summary    : {verdict.summary}")
@@ -424,25 +437,264 @@ def _print_report(
 # Public API
 # ---------------------------------------------------------------------------
 
+def _github_repo_parts(path: str) -> Optional[Tuple[str, str]]:
+    match = re.match(r"https://github\.com/([^/]+)/([^/#]+?)(?:\.git)?/?$", path.strip())
+    if not match:
+        return None
+    return match.group(1), match.group(2)
 
-import tempfile
-import shutil
-import re
-import subprocess
 
 def _is_github_url(path: str) -> bool:
-    return bool(re.match(r"https://github.com/[^/]+/[^/]+/?$", path.strip()))
+    return _github_repo_parts(path) is not None
 
-def _clone_github_repo(url: str) -> str:
-    temp_dir = tempfile.mkdtemp(prefix="sentinel_github_")
-    print(f"Cloning GitHub repo {url} to {temp_dir} ...")
+
+def _clone_github_repo(url: str, clone_base_dir: str = "demo_project") -> str:
+    repo_parts = _github_repo_parts(url)
+    if repo_parts is None:
+        raise ValueError(f"Unsupported GitHub URL: {url}")
+
+    owner, repo_name = repo_parts
+    clone_root = Path(clone_base_dir)
+    clone_root.mkdir(parents=True, exist_ok=True)
+
+    target_dir = clone_root / f"{owner}__{repo_name}"
+    if target_dir.is_dir() and (target_dir / ".git").is_dir():
+        print(f"Using existing cloned repository: {target_dir}")
+        return str(target_dir.resolve())
+
+    if target_dir.exists():
+        suffix = 2
+        while True:
+            candidate = clone_root / f"{owner}__{repo_name}_{suffix}"
+            if not candidate.exists():
+                target_dir = candidate
+                break
+            suffix += 1
+
+    print(f"Cloning GitHub repo {url} into {target_dir} ...")
     try:
-        subprocess.run(["git", "clone", "--depth=1", url, temp_dir], check=True)
-    except Exception as e:
-        print(f"Error: Failed to clone repo: {e}")
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        subprocess.run(["git", "clone", "--depth=1", url, str(target_dir)], check=True)
+    except Exception as exc:
+        print(f"Error: Failed to clone repo: {exc}")
+        shutil.rmtree(target_dir, ignore_errors=True)
         sys.exit(1)
-    return temp_dir
+    return str(target_dir.resolve())
+
+
+def _materialize_repo_path(repo_input: str, clone_base_dir: str = "demo_project") -> str:
+    repo_path = _clone_github_repo(repo_input, clone_base_dir) if _is_github_url(repo_input) else repo_input
+    repo_path = os.path.abspath(repo_path)
+    if not os.path.isdir(repo_path):
+        print(f"Error: '{repo_input}' is not a valid directory or GitHub repo.")
+        sys.exit(1)
+    return repo_path
+
+
+def _report_target_name(repo_input: str, repo_path: str) -> str:
+    repo_parts = _github_repo_parts(repo_input)
+    if repo_parts is not None:
+        return repo_parts[1]
+    return Path(repo_path).name or "project"
+
+
+def _default_report_path(repo_input: str, repo_path: str, prefix: str) -> Path:
+    target_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", _report_target_name(repo_input, repo_path))
+    return Path("tests/reports") / f"{prefix}_{target_name}_{date.today().isoformat()}.txt"
+
+
+def _detect_languages_in_graph(graph: Optional[Dict]) -> List[Language]:
+    if not graph:
+        return []
+
+    ext_map = {
+        ".py": Language.PYTHON,
+        ".java": Language.JAVA,
+        ".ts": Language.TYPESCRIPT,
+        ".tsx": Language.TYPESCRIPT,
+    }
+    detected: List[Language] = []
+    seen = set()
+    for file_path in graph:
+        lang = ext_map.get(os.path.splitext(file_path)[1].lower())
+        if lang and lang not in seen:
+            detected.append(lang)
+            seen.add(lang)
+    return detected
+
+
+def _extract_json_payload(raw_text: str) -> Optional[Any]:
+    text = raw_text.strip()
+    if not text:
+        return None
+
+    fence_match = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    if fence_match:
+        text = fence_match.group(1).strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    array_start = text.find("[")
+    array_end = text.rfind("]")
+    if array_start != -1 and array_end > array_start:
+        try:
+            return json.loads(text[array_start:array_end + 1])
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _request_llm_policy_suggestions(guardian_violations: List[str], languages: List[Language]) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    if not guardian_violations:
+        print("[Sentinel LLM] No Guardian violations were found. Skipping policy growth.")
+        return None, []
+
+    if not os.getenv("COHERE_API_KEY"):
+        print("[Sentinel LLM] COHERE_API_KEY is not set. Skipping policy growth.")
+        return None, []
+
+    try:
+        from sentinel.cohere_utils import call_cohere
+    except ImportError:
+        print("[Sentinel LLM] Cohere utility is not available. Skipping policy growth.")
+        return None, []
+
+    existing_specs = load_policy_specs_for_languages(languages)
+    language_names = [language.name for language in languages] or [Language.UNKNOWN.name]
+    guardian_sample = "\n".join(f"- {violation}" for violation in guardian_violations[:25])
+    existing_sample = json.dumps(existing_specs, indent=2)
+    prompt = (
+        "Return only a JSON array of new Sentinel policy specs. "
+        "Each object must have: name, language, match_mode, patterns, description. "
+        "The language must be one of PYTHON, JAVA, TYPESCRIPT. "
+        "The match_mode must be one of contains, casefold_contains, regex. "
+        "The patterns must match Guardian violation strings directly. "
+        "Do not repeat or rename existing policies. Suggest only truly new rules.\n\n"
+        f"Languages in scope: {language_names}\n\n"
+        f"Existing test-backed policy specs:\n{existing_sample}\n\n"
+        f"Observed Guardian violations:\n{guardian_sample}\n"
+    )
+    messages = [
+        {"role": "system", "content": "You design machine-readable static-analysis policy specs for Sentinel."},
+        {"role": "user", "content": prompt},
+    ]
+    llm_response = call_cohere(messages)
+    if not llm_response:
+        print("[Sentinel LLM] No response from Cohere.")
+        return None, []
+
+    parsed = _extract_json_payload(llm_response)
+    if isinstance(parsed, dict):
+        parsed = [parsed]
+    if not isinstance(parsed, list):
+        print("[Sentinel LLM] Cohere response was not valid JSON. Skipping policy growth.")
+        return llm_response, []
+
+    suggestions = [item for item in parsed if isinstance(item, dict)]
+    return llm_response, suggestions
+
+
+def _print_test_report(
+    repo_path: str,
+    guardian_violations: List[str],
+    verdict: Verdict,
+    llm_response: Optional[str] = None,
+    added_policy_specs: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+) -> None:
+    print("\n" + "=" * 60)
+    print("SENTINEL TEST REPORT")
+    print("=" * 60)
+    print(f"Repository : {repo_path}")
+
+    print("\n--- Guardian Violations ---")
+    if guardian_violations:
+        for violation in guardian_violations:
+            print(f"  [!] {violation}")
+    else:
+        print("  None")
+
+    print("\n--- Gatekeeper Verdict ---")
+    decision = "APPROVED" if verdict.approved else "REJECTED"
+    print(f"  Decision   : {decision}")
+    print(f"  Confidence : {verdict.confidence:.0%}")
+    print(f"  Summary    : {verdict.summary}")
+    if verdict.blocking_issues:
+        print("  Blocking issues:")
+        for issue in verdict.blocking_issues:
+            print(f"    [!] {issue}")
+
+    if llm_response is not None:
+        print("\n--- LLM Policy Suggestions ---")
+        if llm_response.strip():
+            print(llm_response)
+        else:
+            print("  (no suggestions returned)")
+
+    if added_policy_specs is not None:
+        print("\n--- Policy Catalog Updates ---")
+        if added_policy_specs:
+            for language, entries in added_policy_specs.items():
+                print(f"  {language}: {len(entries)} new policy spec(s)")
+                for entry in entries:
+                    print(f"    - {entry['name']}")
+        else:
+            print("  No policy spec updates were applied.")
+
+    print("=" * 60)
+
+
+def _run_test_workflow(repo_input: str, use_llm: bool = False, autogrow: bool = False) -> Tuple[str, Verdict]:
+    repo_path = _materialize_repo_path(repo_input)
+    print(f"Testing repository: {repo_path}")
+    print("=" * 60)
+
+    graph, guardian_violations = _run_guardian(repo_path, step_label="[1/2]")
+    detected_langs = _detect_languages_in_graph(graph)
+    config = PolicyConfig.from_languages(detected_langs)
+    verdict = _run_gatekeeper(
+        historian_report=None,
+        guardian_violations=guardian_violations,
+        fuzzer_report=None,
+        sandbox_report=None,
+        graph=graph,
+        config=config,
+        step_label="[2/2]",
+    )
+
+    llm_response: Optional[str] = None
+    added_policy_specs: Optional[Dict[str, List[Dict[str, Any]]]] = None
+    if use_llm:
+        llm_response, suggested_specs = _request_llm_policy_suggestions(guardian_violations, detected_langs)
+        print("\n--- LLM Policy Suggestions JSON ---")
+        if suggested_specs:
+            print(json.dumps(suggested_specs, indent=2))
+        else:
+            print("[]")
+        print("--- End LLM Policy Suggestions JSON ---")
+        if autogrow and suggested_specs:
+            added_policy_specs = apply_policy_updates(suggested_specs)
+        elif autogrow:
+            added_policy_specs = {}
+
+    _print_test_report(repo_path, guardian_violations, verdict, llm_response=llm_response, added_policy_specs=added_policy_specs)
+    return repo_path, verdict
+
+
+def _run_with_report_capture(repo_input: str, prefix: str, workflow) -> Verdict:
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        repo_path, verdict = workflow()
+
+    output = buffer.getvalue()
+    print(output, end="")
+
+    report_path = _default_report_path(repo_input, repo_path, prefix)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(output, encoding="utf-8")
+    print(f"[Sentinel] Report saved to {report_path}")
+    return verdict
 
 def analyze(repo_path: str, use_sandbox: bool = False, skip_historian: bool = False, policy_source: str = None, use_llm: bool = False) -> Verdict:
     """Analyze *repo_path* (local path or GitHub URL) by running all Sentinel pillars in sequence.
@@ -450,17 +702,8 @@ def analyze(repo_path: str, use_sandbox: bool = False, skip_historian: bool = Fa
     policy_source: optional path or URL to load additional/dynamic policies.
     use_llm: if True, use LLM/AI for policy suggestions and violation explanations.
     """
-    cleanup_dir = None
     orig_input = repo_path
-    if _is_github_url(repo_path):
-        repo_path = _clone_github_repo(repo_path)
-        cleanup_dir = repo_path
-    repo_path = os.path.abspath(repo_path)
-    if not os.path.isdir(repo_path):
-        print(f"Error: '{orig_input}' is not a valid directory or GitHub repo.")
-        if cleanup_dir:
-            shutil.rmtree(cleanup_dir, ignore_errors=True)
-        sys.exit(1)
+    repo_path = _materialize_repo_path(repo_path)
 
     print(f"Analyzing repository: {repo_path}")
     print("=" * 60)
@@ -541,6 +784,24 @@ def analyze(repo_path: str, use_sandbox: bool = False, skip_historian: bool = Fa
 
     return verdict
 
+
+def test_project(repo_input: str) -> Verdict:
+    """Run the Guardian + Gatekeeper-only workflow against a local path or GitHub URL."""
+    return _run_with_report_capture(
+        repo_input,
+        prefix="test",
+        workflow=lambda: _run_test_workflow(repo_input, use_llm=False, autogrow=False),
+    )
+
+
+def end_to_end_test(repo_input: str) -> Verdict:
+    """Run the test workflow, ask Cohere for new policy specs, and grow the tests-backed policy catalog."""
+    return _run_with_report_capture(
+        repo_input,
+        prefix="end_to_end",
+        workflow=lambda: _run_test_workflow(repo_input, use_llm=True, autogrow=True),
+    )
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -594,6 +855,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use external LLM/AI for policy suggestions and violation explanations.",
     )
 
+    test_parser = subparsers.add_parser(
+        "test",
+        help="Run Sentinel's Guardian + Gatekeeper workflow against a local path or GitHub URL.",
+        description=(
+            "Runs the tests-backed Sentinel workflow for Python, Java, or TypeScript "
+            "projects using Guardian findings and Gatekeeper policies loaded from tests/."
+        ),
+    )
+    test_parser.add_argument(
+        "repo_path",
+        metavar="path/to/project_or_github_url",
+        help="Path to the local project or a GitHub repository URL.",
+    )
+
+    e2e_parser = subparsers.add_parser(
+        "end-to-end-test",
+        help="Run the test workflow, ask Cohere for new policy specs, and autogrow tests-backed policy catalogs.",
+    )
+    e2e_parser.add_argument(
+        "repo_path",
+        metavar="path/to/project_or_github_url",
+        help="Path to the local project or a GitHub repository URL.",
+    )
+
     return parser
 
 
@@ -614,6 +899,12 @@ def main(argv: Optional[List[str]] = None) -> None:
             policy_source=args.policy_source,
             use_llm=args.use_llm,
         )
+        sys.exit(0 if verdict.approved else 1)
+    if args.command == "test":
+        verdict = test_project(args.repo_path)
+        sys.exit(0 if verdict.approved else 1)
+    if args.command == "end-to-end-test":
+        verdict = end_to_end_test(args.repo_path)
         sys.exit(0 if verdict.approved else 1)
 
 

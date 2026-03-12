@@ -38,3 +38,24 @@ Gatekeeper issues a PASS/FAIL verdict.
 - **ChromaDB**: Vector storage for semantic code search
 - **Pytest**: Testing framework
 - **Ruff**: Fast Python linting and formatting
+
+## Current Workflow
+
+Sentinel now exposes two project-testing workflows for local paths and GitHub repository URLs:
+
+- `python -m sentinel.cli test <path-or-github-url>`
+- `python -m sentinel.cli end-to-end-test <path-or-github-url>`
+
+The normal `test` workflow runs only the Architectural Guardian and the Principled Gatekeeper. It does not invoke Historian, Fuzzer, Sandbox, or LLM policy growth.
+
+The active runtime policies for Python, Java, and TypeScript are loaded from the `POLICY_SPECS` catalogs defined in:
+
+- `tests/policies_python/test_policy_python.py`
+- `tests/policies_java/test_policy_java.py`
+- `tests/policies_ts/test_policy_ts.py`
+
+Those test-side policy catalogs are the runtime source of truth for Sentinel's language-specific test rules.
+
+The `end-to-end-test` workflow runs the same Guardian + Gatekeeper flow, then asks Cohere for additional machine-readable policy specs. Any new specs are merged back into the relevant `POLICY_SPECS` catalog so Sentinel's policy coverage can grow over time.
+
+When a GitHub URL is provided, Sentinel clones the repository into the `demo_project/` folder and runs the workflow against that local checkout.

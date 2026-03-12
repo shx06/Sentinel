@@ -14,41 +14,21 @@ Public API::
         NoCriticalBugsPolicy,
         ArchitectureCompliancePolicy,
         TestPassPolicy,
-        # Python
-        NoCircularDependenciesPolicy,
-        FunctionComplexityPolicy,
-        TODOCommentPolicy,
-        RequireDocstringPolicy,
-        # Java
-        JavaLayeringPolicy,
-        PublicFieldPolicy,
-        MissingJavadocPolicy,
-        JavaNamingConventionPolicy,
-        # TypeScript
-        StrictTypingPolicy,
-        NoUnsafeTypeAssertionPolicy,
-        NoConsoleLogPolicy,
+        # Tests-backed policy construction
+        policy_from_name,
+        policy_from_spec,
     )
 """
 
 from .judge import Gatekeeper
 from .policy import (
     ArchitectureCompliancePolicy,
-    FunctionComplexityPolicy,
-    JavaLayeringPolicy,
-    JavaNamingConventionPolicy,
-    MissingJavadocPolicy,
     NoCriticalBugsPolicy,
-    NoCircularDependenciesPolicy,
-    NoConsoleLogPolicy,
-    NoUnsafeTypeAssertionPolicy,
     Policy,
     PolicyConfig,
-    PublicFieldPolicy,
-    RequireDocstringPolicy,
-    StrictTypingPolicy,
     TestPassPolicy,
-    TODOCommentPolicy,
+    policy_from_name,
+    policy_from_spec,
 )
 from .verdict import Verdict
 
@@ -62,18 +42,7 @@ __all__ = [
     "ArchitectureCompliancePolicy",
     "NoCriticalBugsPolicy",
     "TestPassPolicy",
-    # Python policies
-    "FunctionComplexityPolicy",
-    "NoCircularDependenciesPolicy",
-    "RequireDocstringPolicy",
-    "TODOCommentPolicy",
-    # Java policies
-    "JavaLayeringPolicy",
-    "JavaNamingConventionPolicy",
-    "MissingJavadocPolicy",
-    "PublicFieldPolicy",
-    # TypeScript policies
-    "NoConsoleLogPolicy",
-    "NoUnsafeTypeAssertionPolicy",
-    "StrictTypingPolicy",
+    # Tests-backed policy constructors
+    "policy_from_name",
+    "policy_from_spec",
 ]
