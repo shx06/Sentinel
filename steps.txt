@@ -53,18 +53,24 @@ Python version: 3.11.9
 
 7. Policy source of truth for test/e2e workflows:
 	- src/sentinel/gatekeeper/policies/policy_specs.json
-	- tests validate policy behavior; runtime no longer depends on tests files.
+	- Policy validation tests are co-located under src/sentinel/gatekeeper/policies and core tests under src/sentinel/core and src/sentinel/gatekeeper.
+	- tests/ is now reserved for generated reports and lightweight test artifacts.
 
 8. Makefile shortcuts:
 	- make test PROJECT=<path>
 	- make end-to-end-test PROJECT=<path>
 	- make analyze-bookmyshow
+	- make unit-tests
 
-9. Run core tests:
-	python -m unittest discover tests
+9. Run tests:
+	- Full suite (recommended):
+		make unit-tests
+	- Equivalent explicit command:
+		python -m unittest sentinel.gatekeeper.test_gatekeeper_core sentinel.core.test_guardian sentinel.core.test_scanner sentinel.gatekeeper.policies.test_policy_python sentinel.gatekeeper.policies.test_policy_java sentinel.gatekeeper.policies.test_policy_ts
 
 10. Notes:
 	- If COHERE_API_KEY is missing, end-to-end-test skips policy growth safely.
+	- end-to-end-test can still exit with code 1 when Gatekeeper rejects the target project; this indicates policy violations in the target, not a Sentinel runtime failure.
 	- If Docker is unavailable, analyze --sandbox will report sandbox unavailable.
 	- If chromadb is unavailable, run analyze with --skip-historian.
 
