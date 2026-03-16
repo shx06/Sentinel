@@ -1,4 +1,4 @@
-"""Update tests-backed Sentinel policy catalogs from LLM suggestions."""
+"""Update Sentinel runtime policy catalog from LLM suggestions."""
 
 from __future__ import annotations
 
@@ -52,12 +52,12 @@ def extract_llm_policy_specs(report_text: str) -> List[Dict[str, Any]]:
 
 
 def apply_policy_updates(specs: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-    """Merge *specs* into the tests-backed policy catalogs."""
+    """Merge *specs* into the runtime policy catalog."""
     return update_policy_specs(specs)
 
 
 def main(argv: List[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Merge LLM policy suggestions into tests-backed POLICY_SPECS catalogs.")
+    parser = argparse.ArgumentParser(description="Merge LLM policy suggestions into Sentinel runtime policy catalog.")
     parser.add_argument("--report", required=True, help="Path to a Sentinel end-to-end report file.")
     args = parser.parse_args(argv)
 

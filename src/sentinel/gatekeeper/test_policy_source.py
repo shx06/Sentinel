@@ -1,27 +1,27 @@
-"""Helpers for loading and updating test-backed policy specifications.
+"""Helpers for loading and updating runtime policy specifications.
 
-The policy catalogs that drive Sentinel's runtime test workflow live in the
-language-specific policy test modules under ``tests/``. This module reads those
-``POLICY_SPECS`` literals without importing the test modules and can update them
-when the end-to-end LLM flow suggests new rules.
+The active policy catalogs that drive Sentinel's runtime Gatekeeper workflow
+live in ``src/sentinel/gatekeeper/policies/policy_specs.json``.
+
+Tests under ``tests/`` validate behavior, but runtime policy loading does not
+depend on test modules.
 """
 
 from __future__ import annotations
 
-import ast
+import json
 from collections import defaultdict
 from pathlib import Path
-from pprint import pformat
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from sentinel.core.languages import Language
 
 
-_POLICY_VAR_NAME = "POLICY_SPECS"
-_LANGUAGE_FILE_MAP = {
-    Language.PYTHON: Path("tests/policies_python/test_policy_python.py"),
-    Language.JAVA: Path("tests/policies_java/test_policy_java.py"),
-    Language.TYPESCRIPT: Path("tests/policies_ts/test_policy_ts.py"),
+_CATALOG_REL_PATH = Path("src/sentinel/gatekeeper/policies/policy_specs.json")
+_LANGUAGE_KEY_MAP = {
+    Language.PYTHON: "PYTHON",
+    Language.JAVA: "JAVA",
+    Language.TYPESCRIPT: "TYPESCRIPT",
 }
 
 
@@ -30,40 +30,32 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def policy_test_path(language: Language) -> Path:
-    """Return the policy test file path for *language*."""
+def catalog_path() -> Path:
+    """Return the runtime policy catalog file path."""
+    return project_root() / _CATALOG_REL_PATH
+
+
+def _load_catalog() -> Dict[str, List[Dict[str, Any]]]:
+    path = catalog_path()
+    if not path.is_file():
+        raise FileNotFoundError(f"Runtime policy catalog not found: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Runtime policy catalog must be a JSON object keyed by language.")
+    return payload
+
+
+def _save_catalog(payload: Dict[str, List[Dict[str, Any]]]) -> None:
+    path = catalog_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+
+
+def _language_key(language: Language) -> str:
     try:
-        return project_root() / _LANGUAGE_FILE_MAP[language]
+        return _LANGUAGE_KEY_MAP[language]
     except KeyError as exc:
         raise ValueError(f"Unsupported policy language: {language!r}") from exc
-
-
-def policy_test_paths() -> Dict[Language, Path]:
-    """Return a copy of the language-to-policy-file mapping."""
-    return {language: project_root() / rel_path for language, rel_path in _LANGUAGE_FILE_MAP.items()}
-
-
-def _extract_policy_specs(content: str) -> List[Dict[str, Any]]:
-    tree = ast.parse(content)
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        for target in node.targets:
-            if isinstance(target, ast.Name) and target.id == _POLICY_VAR_NAME:
-                specs = ast.literal_eval(node.value)
-                return [normalize_policy_spec(spec) for spec in specs]
-    return []
-
-
-def _find_policy_assignment_node(content: str) -> Optional[ast.Assign]:
-    tree = ast.parse(content)
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        for target in node.targets:
-            if isinstance(target, ast.Name) and target.id == _POLICY_VAR_NAME:
-                return node
-    return None
 
 
 def normalize_language(value: Any) -> Optional[Language]:
@@ -85,7 +77,12 @@ def normalize_policy_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
     if language is None:
         raise ValueError(f"Policy spec has unsupported language: {spec!r}")
 
-    name = str(spec.get("name", "")).strip()
+    name = str(
+        spec.get("name")
+        or spec.get("name1")
+        or spec.get("policy_name")
+        or ""
+    ).strip()
     if not name:
         raise ValueError(f"Policy spec is missing a name: {spec!r}")
 
@@ -104,17 +101,20 @@ def normalize_policy_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def load_policy_specs(language: Language) -> List[Dict[str, Any]]:
-    """Load normalized policy specs for *language* from the tests folder."""
-    path = policy_test_path(language)
-    return _extract_policy_specs(path.read_text(encoding="utf-8"))
+    """Load normalized runtime policy specs for *language* from the catalog."""
+    payload = _load_catalog()
+    specs = payload.get(_language_key(language), [])
+    if not isinstance(specs, list):
+        raise ValueError(f"Policy catalog entry for {language.name} must be a list.")
+    return [normalize_policy_spec(spec) for spec in specs]
 
 
 def load_policy_specs_for_languages(languages: Iterable[Language]) -> List[Dict[str, Any]]:
-    """Load all normalized policy specs for the given languages."""
+    """Load all normalized runtime policy specs for the given languages."""
     specs: List[Dict[str, Any]] = []
     seen = set()
     for language in languages:
-        if language in seen or language not in _LANGUAGE_FILE_MAP:
+        if language in seen or language not in _LANGUAGE_KEY_MAP:
             continue
         seen.add(language)
         specs.extend(load_policy_specs(language))
@@ -152,21 +152,8 @@ def _merge_policy_specs(existing: Sequence[Dict[str, Any]], new_specs: Sequence[
     return merged
 
 
-def _replace_policy_block(content: str, specs: Sequence[Dict[str, Any]]) -> str:
-    assignment = _find_policy_assignment_node(content)
-    if assignment is None:
-        raise ValueError(f"{_POLICY_VAR_NAME} assignment not found in policy test file.")
-
-    lines = content.splitlines()
-    start = assignment.lineno - 1
-    end = assignment.end_lineno
-    replacement = f"{_POLICY_VAR_NAME} = {pformat(list(specs), sort_dicts=False, width=100)}"
-    new_lines = lines[:start] + replacement.splitlines() + lines[end:]
-    return "\n".join(new_lines) + "\n"
-
-
 def update_policy_specs(new_specs: Sequence[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-    """Merge *new_specs* into the tests-backed policy catalogs.
+    """Merge *new_specs* into the runtime policy catalog.
 
     Returns a mapping of language name to the specs that were newly added.
     """
@@ -179,17 +166,25 @@ def update_policy_specs(new_specs: Sequence[Dict[str, Any]]) -> Dict[str, List[D
         grouped[language].append(normalized)
 
     added_by_language: Dict[str, List[Dict[str, Any]]] = {}
+    payload = _load_catalog()
+
     for language, specs in grouped.items():
-        path = policy_test_path(language)
-        existing = load_policy_specs(language)
+        key = _language_key(language)
+        existing_raw = payload.get(key, [])
+        if not isinstance(existing_raw, list):
+            existing_raw = []
+
+        existing = [normalize_policy_spec(spec) for spec in existing_raw]
         existing_keys = {_policy_identity(spec) for spec in existing}
         merged = _merge_policy_specs(existing, specs)
         merged_keys = {_policy_identity(spec) for spec in merged}
         added_keys = merged_keys - existing_keys
 
         if added_keys:
-            updated_content = _replace_policy_block(path.read_text(encoding="utf-8"), merged)
-            path.write_text(updated_content, encoding="utf-8")
+            payload[key] = merged
             added_by_language[language.name] = [spec for spec in merged if _policy_identity(spec) in added_keys]
+
+    if added_by_language:
+        _save_catalog(payload)
 
     return added_by_language

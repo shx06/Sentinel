@@ -7,7 +7,8 @@ autogrow:
 	@echo "Usage: python src/sentinel/gatekeeper/test_policy_autogrow.py --report tests/reports/<report>.txt"
 
 unit-tests:
-	python -m unittest discover tests
+	python -m unittest sentinel.gatekeeper.test_gatekeeper_core sentinel.core.test_guardian sentinel.core.test_scanner
+	python -m unittest sentinel.gatekeeper.policies.test_policy_python sentinel.gatekeeper.policies.test_policy_java sentinel.gatekeeper.policies.test_policy_ts
 
 # Usage: make end-to-end-test PROJECT=demo_project/BookMyShow
 end-to-end-test:

@@ -11,6 +11,7 @@ except ImportError:
 COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 
 # Utility to call Cohere's Chat endpoint for policy suggestions or violation explanations
+# v - 5.20.7
 def call_cohere(messages, model="command-a-03-2025", temperature=0.2, max_tokens=512):
     import traceback
     print("[Sentinel LLM][DEBUG] call_cohere invoked.")

@@ -23,67 +23,6 @@ import os
 import tempfile
 import unittest
 
-POLICY_SPECS = [{'name': 'JavaLayeringPolicy',
-  'language': 'JAVA',
-  'match_mode': 'regex',
-  'patterns': ["Import of '.*Controller' in '.*Service\\.java'"],
-  'description': 'Reject Java service classes that import controller classes.'},
- {'name': 'PublicFieldPolicy',
-  'language': 'JAVA',
-  'match_mode': 'contains',
-  'patterns': ['[PUBLIC_FIELD]'],
-  'description': 'Reject Java classes that expose mutable public fields.'},
- {'name': 'MissingJavadocPolicy',
-  'language': 'JAVA',
-  'match_mode': 'contains',
-  'patterns': ['[JAVADOC]'],
-  'description': 'Reject Java public types that are missing Javadoc.'},
- {'name': 'JavaNamingConventionPolicy',
-  'language': 'JAVA',
-  'match_mode': 'contains',
-  'patterns': ['[NAMING]'],
-  'description': 'Reject Java code that violates naming conventions.'},
- {'name': 'JavaDTOImportPolicy',
-  'language': 'JAVA',
-  'match_mode': 'regex',
-  'patterns': ["Import of '.*RequestDTO' in '.*Controller\\.java'",
-               "Import of '.*ResponseDTO' in '.*Controller\\.java'"],
-  'description': 'Reject Java controller classes that import DTO classes directly.'},
- {'name': 'JavaSpringFrameworkImportPolicy',
-  'language': 'JAVA',
-  'match_mode': 'regex',
-  'patterns': ["Import of 'Autowired' in '.*\\.java'",
-               "Import of 'CommandLineRunner' in '.*\\.java'",
-               "Import of 'SpringApplication' in '.*\\.java'",
-               "Import of 'SpringBootApplication' in '.*\\.java'"],
-  'description': 'Reject Java classes that import Spring Framework classes outside of the main '
-                 'application class.'},
- {'name': 'JavaModelImportPolicy',
-  'language': 'JAVA',
-  'match_mode': 'regex',
-  'patterns': ["Import of '.*Model' in '.*Controller\\.java'"],
-  'description': 'Reject Java controller classes that import model classes directly.'},
- {'name': 'JavaApplicationClassImportPolicy',
-  'language': 'JAVA',
-  'match_mode': 'regex',
-  'patterns': ["Import of '.*Controller' in '.*Application\\.java'",
-               "Import of '.*DTO' in '.*Application\\.java'",
-               "Import of '.*Model' in '.*Application\\.java'"],
-  'description': 'Reject Java application classes that import controller, DTO, or model classes '
-                 'directly.'},
- {'name': 'JavaControllerFrameworkImportPolicy',
-  'language': 'JAVA',
-  'match_mode': 'regex',
-  'patterns': ["Import of 'ResponseStatus' in '.*Controller\\.java'"],
-  'description': 'Reject Java controller classes that import framework-specific response status '
-                 'classes directly.'},
- {'name': 'JavaControllerServiceImportPolicy',
-  'language': 'JAVA',
-  'match_mode': 'regex',
-  'patterns': ["Import of '.*Service' in '.*Controller\\.java'"],
-  'description': 'Reject Java controller classes that import service classes directly, bypassing '
-                 'the established layering.'}]
-
 from sentinel.core.guardian import ArchitecturalGuardian
 from sentinel.core.languages import Language
 from sentinel.gatekeeper import Gatekeeper

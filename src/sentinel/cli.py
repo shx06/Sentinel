@@ -448,7 +448,7 @@ def _is_github_url(path: str) -> bool:
     return _github_repo_parts(path) is not None
 
 
-def _clone_github_repo(url: str, clone_base_dir: str = "demo_project") -> str:
+def _clone_github_repo(url: str, clone_base_dir: str = "demo_project", refresh: bool = False) -> str:
     repo_parts = _github_repo_parts(url)
     if repo_parts is None:
         raise ValueError(f"Unsupported GitHub URL: {url}")
@@ -459,6 +459,12 @@ def _clone_github_repo(url: str, clone_base_dir: str = "demo_project") -> str:
 
     target_dir = clone_root / f"{owner}__{repo_name}"
     if target_dir.is_dir() and (target_dir / ".git").is_dir():
+        if refresh:
+            print(f"Refreshing existing cloned repository: {target_dir}")
+            try:
+                subprocess.run(["git", "-C", str(target_dir), "pull", "--ff-only"], check=True)
+            except Exception as exc:
+                print(f"Warning: Failed to refresh clone: {exc}")
         print(f"Using existing cloned repository: {target_dir}")
         return str(target_dir.resolve())
 
@@ -481,8 +487,12 @@ def _clone_github_repo(url: str, clone_base_dir: str = "demo_project") -> str:
     return str(target_dir.resolve())
 
 
-def _materialize_repo_path(repo_input: str, clone_base_dir: str = "demo_project") -> str:
-    repo_path = _clone_github_repo(repo_input, clone_base_dir) if _is_github_url(repo_input) else repo_input
+def _materialize_repo_path(repo_input: str, clone_base_dir: str = "demo_project", refresh_clone: bool = False) -> str:
+    repo_path = (
+        _clone_github_repo(repo_input, clone_base_dir, refresh=refresh_clone)
+        if _is_github_url(repo_input)
+        else repo_input
+    )
     repo_path = os.path.abspath(repo_path)
     if not os.path.isdir(repo_path):
         print(f"Error: '{repo_input}' is not a valid directory or GitHub repo.")
@@ -573,7 +583,7 @@ def _request_llm_policy_suggestions(guardian_violations: List[str], languages: L
         "The patterns must match Guardian violation strings directly. "
         "Do not repeat or rename existing policies. Suggest only truly new rules.\n\n"
         f"Languages in scope: {language_names}\n\n"
-        f"Existing test-backed policy specs:\n{existing_sample}\n\n"
+        f"Existing runtime policy specs:\n{existing_sample}\n\n"
         f"Observed Guardian violations:\n{guardian_sample}\n"
     )
     messages = [
@@ -645,8 +655,13 @@ def _print_test_report(
     print("=" * 60)
 
 
-def _run_test_workflow(repo_input: str, use_llm: bool = False, autogrow: bool = False) -> Tuple[str, Verdict]:
-    repo_path = _materialize_repo_path(repo_input)
+def _run_test_workflow(
+    repo_input: str,
+    use_llm: bool = False,
+    autogrow: bool = False,
+    refresh_clone: bool = False,
+) -> Tuple[str, Verdict]:
+    repo_path = _materialize_repo_path(repo_input, refresh_clone=refresh_clone)
     print(f"Testing repository: {repo_path}")
     print("=" * 60)
 
@@ -696,14 +711,21 @@ def _run_with_report_capture(repo_input: str, prefix: str, workflow) -> Verdict:
     print(f"[Sentinel] Report saved to {report_path}")
     return verdict
 
-def analyze(repo_path: str, use_sandbox: bool = False, skip_historian: bool = False, policy_source: str = None, use_llm: bool = False) -> Verdict:
+def analyze(
+    repo_path: str,
+    use_sandbox: bool = False,
+    skip_historian: bool = False,
+    policy_source: str = None,
+    use_llm: bool = False,
+    refresh_clone: bool = False,
+) -> Verdict:
     """Analyze *repo_path* (local path or GitHub URL) by running all Sentinel pillars in sequence.
     skip_historian: if True, skip the Historian pillar and ChromaDB dependency.
     policy_source: optional path or URL to load additional/dynamic policies.
     use_llm: if True, use LLM/AI for policy suggestions and violation explanations.
     """
     orig_input = repo_path
-    repo_path = _materialize_repo_path(repo_path)
+    repo_path = _materialize_repo_path(repo_path, refresh_clone=refresh_clone)
 
     print(f"Analyzing repository: {repo_path}")
     print("=" * 60)
@@ -785,21 +807,31 @@ def analyze(repo_path: str, use_sandbox: bool = False, skip_historian: bool = Fa
     return verdict
 
 
-def test_project(repo_input: str) -> Verdict:
+def test_project(repo_input: str, refresh_clone: bool = False) -> Verdict:
     """Run the Guardian + Gatekeeper-only workflow against a local path or GitHub URL."""
     return _run_with_report_capture(
         repo_input,
         prefix="test",
-        workflow=lambda: _run_test_workflow(repo_input, use_llm=False, autogrow=False),
+        workflow=lambda: _run_test_workflow(
+            repo_input,
+            use_llm=False,
+            autogrow=False,
+            refresh_clone=refresh_clone,
+        ),
     )
 
 
-def end_to_end_test(repo_input: str) -> Verdict:
-    """Run the test workflow, ask Cohere for new policy specs, and grow the tests-backed policy catalog."""
+def end_to_end_test(repo_input: str, refresh_clone: bool = False) -> Verdict:
+    """Run the test workflow, ask Cohere for new policy specs, and grow the runtime policy catalog."""
     return _run_with_report_capture(
         repo_input,
         prefix="end_to_end",
-        workflow=lambda: _run_test_workflow(repo_input, use_llm=True, autogrow=True),
+        workflow=lambda: _run_test_workflow(
+            repo_input,
+            use_llm=True,
+            autogrow=True,
+            refresh_clone=refresh_clone,
+        ),
     )
 
 # ---------------------------------------------------------------------------
@@ -854,19 +886,31 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Use external LLM/AI for policy suggestions and violation explanations.",
     )
+    analyze_parser.add_argument(
+        "--refresh-clone",
+        action="store_true",
+        default=False,
+        help="If repo_path is a GitHub URL with an existing clone, run git pull before analysis.",
+    )
 
     test_parser = subparsers.add_parser(
         "test",
         help="Run Sentinel's Guardian + Gatekeeper workflow against a local path or GitHub URL.",
         description=(
-            "Runs the tests-backed Sentinel workflow for Python, Java, or TypeScript "
-            "projects using Guardian findings and Gatekeeper policies loaded from tests/."
+            "Runs the Sentinel workflow for Python, Java, or TypeScript projects "
+            "using Guardian findings and Gatekeeper policies loaded from runtime catalog."
         ),
     )
     test_parser.add_argument(
         "repo_path",
         metavar="path/to/project_or_github_url",
         help="Path to the local project or a GitHub repository URL.",
+    )
+    test_parser.add_argument(
+        "--refresh-clone",
+        action="store_true",
+        default=False,
+        help="If repo_path is a GitHub URL with an existing clone, run git pull before testing.",
     )
 
     e2e_parser = subparsers.add_parser(
@@ -877,6 +921,12 @@ def build_parser() -> argparse.ArgumentParser:
         "repo_path",
         metavar="path/to/project_or_github_url",
         help="Path to the local project or a GitHub repository URL.",
+    )
+    e2e_parser.add_argument(
+        "--refresh-clone",
+        action="store_true",
+        default=False,
+        help="If repo_path is a GitHub URL with an existing clone, run git pull before running end-to-end-test.",
     )
 
     return parser
@@ -898,13 +948,14 @@ def main(argv: Optional[List[str]] = None) -> None:
             skip_historian=args.skip_historian,
             policy_source=args.policy_source,
             use_llm=args.use_llm,
+            refresh_clone=args.refresh_clone,
         )
         sys.exit(0 if verdict.approved else 1)
     if args.command == "test":
-        verdict = test_project(args.repo_path)
+        verdict = test_project(args.repo_path, refresh_clone=args.refresh_clone)
         sys.exit(0 if verdict.approved else 1)
     if args.command == "end-to-end-test":
-        verdict = end_to_end_test(args.repo_path)
+        verdict = end_to_end_test(args.repo_path, refresh_clone=args.refresh_clone)
         sys.exit(0 if verdict.approved else 1)
 
 

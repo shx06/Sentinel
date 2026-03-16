@@ -132,16 +132,8 @@ class ArchitecturalGuardian:
                 imports = raw_imports
 
                 if ext == ".java":
-                    # --- Java layering: emit per-import violation ---
-                    for fq_name in imports:
-                        parts = fq_name.split(".")
-                        if parts and parts[-1] and parts[-1][0].islower() and len(parts) >= 2:
-                            class_name = parts[-2]
-                        else:
-                            class_name = parts[-1]
-                        violations.append(
-                            f"Import of '{class_name}' in '{filename}'"
-                        )
+                    # Emit only policy-relevant Java import violations.
+                    violations.extend(self._collect_java_import_violations(filename, imports))
 
                     # --- Java-specific violation checks ---
                     for field in self._scanner.find_public_fields(content):
@@ -211,6 +203,62 @@ class ArchitecturalGuardian:
 
         self.graph = graph
         return graph
+
+    @staticmethod
+    def _collect_java_import_violations(filename: str, imports: List[str]) -> List[str]:
+        """Generate Java import violations for targeted architecture checks only."""
+        simple_names: List[str] = []
+        for fq_name in imports:
+            parts = fq_name.split(".")
+            if parts and parts[-1] and parts[-1][0].islower() and len(parts) >= 2:
+                simple_names.append(parts[-2])
+            else:
+                simple_names.append(parts[-1])
+
+        out: List[str] = []
+        lower_name = filename.lower()
+        is_controller = lower_name.endswith("controller.java")
+        is_service = lower_name.endswith("service.java")
+        is_application = lower_name.endswith("application.java")
+
+        framework_types = {
+            "Autowired",
+            "CommandLineRunner",
+            "SpringApplication",
+            "SpringBootApplication",
+        }
+
+        for class_name in simple_names:
+            if not class_name:
+                continue
+
+            if is_service and class_name.endswith("Controller"):
+                out.append(f"Import of '{class_name}' in '{filename}'")
+                continue
+
+            if is_controller and (
+                class_name.endswith("RequestDTO")
+                or class_name.endswith("ResponseDTO")
+                or class_name == "ResponseStatus"
+                or class_name.endswith("Model")
+                or class_name.endswith("Service")
+            ):
+                out.append(f"Import of '{class_name}' in '{filename}'")
+                continue
+
+            if is_application and (
+                class_name.endswith("Controller")
+                or class_name.endswith("DTO")
+                or class_name.endswith("Model")
+            ):
+                out.append(f"Import of '{class_name}' in '{filename}'")
+                continue
+
+            # Framework imports are allowed in Application classes, blocked elsewhere.
+            if class_name in framework_types and not is_application:
+                out.append(f"Import of '{class_name}' in '{filename}'")
+
+        return out
 
     def check_rules(self, rules: List[Rule]) -> List[str]:
         """

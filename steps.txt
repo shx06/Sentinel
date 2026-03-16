@@ -1,108 +1,71 @@
-
 Python version: 3.11.9
 
+================ Sentinel Current Setup & Flow Guide ================
 
-================ Sentinel Setup & Usage Guide ================
-
-1. Clone or copy Sentinel to your workspace.
-
-2. (Optional but recommended) Create and activate a virtual environment:
+1. Create and activate a virtual environment:
 	python -m venv venv
-	source venv/Scripts/activate  # On Windows
-	# or
-	source venv/bin/activate      # On Linux/Mac
+	venv\Scripts\activate
 
-
-
-3. Install dependencies:
+2. Install dependencies:
 	pip install -r requirements.txt
-	# If you want Historian/ChromaDB features, ensure chromadb is installed:
-	pip install chromadb
-	# For .env support (recommended for LLM integration):
-	pip install python-dotenv
 
-4. Project Automation (Makefile):
-	- Use the Makefile for short, npm-like commands:
-		make analyze-bookmyshow
-		make autogrow
-		make test
-		make end-to-end-test PROJECT=<project_path>
-	- The end-to-end-test command will:
-		1. Run Sentinel analysis (with LLM) on the given project path
-		2. Save a report in tests/reports/analyze_<project>_<date>.txt
-		3. Run the policy autogrow script to update policy tests
+3. (Optional) Add API keys in .env for LLM-driven policy growth:
+	COHERE_API_KEY=...
+	OPENAI_API_KEY=...
+	GEMINI_API_KEY=...
 
+4. Supported input targets:
+	- Local project path
+	- GitHub repository URL (Sentinel clones into demo_project/<owner>__<repo>)
 
-9. For LLM/AI integration:
-	- Add your LLM API keys to a .env file in the project root:
-		OPENAI_API_KEY=sk-...
-		GEMINI_API_KEY=...
-		COHERE_API_KEY=...
-	- Sentinel will automatically load these keys if python-dotenv is installed.
-	- Alternatively, export the variables in your shell before running Sentinel.
-	- For Cohere integration:
-		- Ensure the cohere Python SDK is installed in your active environment:
-			pip install cohere
-		- If you see '[Sentinel LLM] Cohere SDK not installed', restart VS Code or your terminal to reload the environment.
-		- Sentinel uses the official Cohere SDK (ClientV2) for LLM calls.
+5. Main workflows:
+	A) Fast policy test workflow (Guardian + Gatekeeper):
+		python -m sentinel.cli test <path_or_github_url>
+		python -m sentinel.cli test <github_url> --refresh-clone
 
-4. Run Sentinel analysis on a project folder:
-	python -m sentinel.cli analyze <target_folder>
+	B) End-to-end policy growth workflow (Guardian + Gatekeeper + Cohere suggestions + autogrow):
+		python -m sentinel.cli end-to-end-test <path_or_github_url>
+		python -m sentinel.cli end-to-end-test <github_url> --refresh-clone
 
-	# To skip Historian (no ChromaDB required):
-	python -m sentinel.cli analyze <target_folder> --skip-historian
+	C) Full 5-pillar workflow (legacy/full analysis path):
+		python -m sentinel.cli analyze <path_or_github_url> [--sandbox] [--skip-historian] [--use-llm]
+		python -m sentinel.cli analyze <github_url> --refresh-clone
 
-	# To enable LLM/AI hooks for policy suggestions (future feature):
-	python -m sentinel.cli analyze <target_folder> --use-llm
+6. What each workflow does:
+	- test:
+		1) Guardian scans .py/.java/.ts/.tsx and emits violations
+		2) Gatekeeper loads active runtime policy specs from src/sentinel/gatekeeper/policies/policy_specs.json
+		3) Verdict is produced (APPROVED or REJECTED)
+		4) Report is written to tests/reports/test_<project>_<date>.txt
 
-	# To load additional/dynamic policies (future feature):
-	python -m sentinel.cli analyze <target_folder> --policy-source <path_or_url>
+	- end-to-end-test:
+		1) Runs the same test flow
+		2) Requests machine-readable policy specs from Cohere
+		3) Merges new valid specs into runtime policy catalog JSON
+		4) Report is written to tests/reports/end_to_end_<project>_<date>.txt
 
+	- analyze:
+		1) Historian (optional): mines git history and semantic memory
+		2) Guardian: static structure scan + rule checks
+		3) Fuzzer: discovers/imports Python callables and fuzzes them
+		4) Sandbox (optional): executes smoke test in Docker
+		5) Gatekeeper: evaluates universal policies and outputs verdict
 
-5. Example for demo_project/src:
-	python -m sentinel.cli analyze demo_project/src --skip-historian --use-llm
+7. Policy source of truth for test/e2e workflows:
+	- src/sentinel/gatekeeper/policies/policy_specs.json
+	- tests validate policy behavior; runtime no longer depends on tests files.
 
+8. Makefile shortcuts:
+	- make test PROJECT=<path>
+	- make end-to-end-test PROJECT=<path>
+	- make analyze-bookmyshow
 
-6. For running tests:
-	# Core logic (Gatekeeper only)
-	python -m unittest tests/test_gatekeeper_core.py
+9. Run core tests:
+	python -m unittest discover tests
 
-	# Python policy tests
-	python -m unittest tests/test_policy_python.py
-
-	# TypeScript policy tests
-	python -m unittest tests/test_policy_ts.py
-
-	# Java policy tests
-	python -m unittest tests/test_policy_java.py
-
-
-7. Test Reports:
-	- After running Sentinel analysis (or make end-to-end-test), a report is saved in tests/reports/ as analyze_<project>_<date>.txt.
-	- This includes all steps, debug logs, violations, LLM/AI suggestions, and verdicts for traceability.
-	- Policy tests are automatically updated with new violations or LLM-suggested rules after each run.
-
-7. Upgrading Sentinel:
-	- Pull latest code from repo or update files as needed.
-	- To add new policies, edit or add to src/sentinel/gatekeeper/policy.py or use --policy-source (future).
-	- To enable AI/LLM integration, set up API keys and configure hooks in cli.py (future).
-
-8. Notes:
-
-================ CURRENT PROGRESS SNAPSHOT (March 8, 2026) ================
-
-- Sentinel policy engine and LLM integration are working.
-- .env loading for OpenAI API key is fixed and tested.
-- LLM feedback loop is triggered, but OpenAI is rate-limited (429 error).
-- Policy testing on demo_project/src works and detects violations.
-- Next steps: Implement dynamic policy loading and saving LLM-suggested policies to tests/.
-
-# To resume from this point:
-# 1. Ensure your .env file has a valid (not rate-limited) OpenAI or Gemini API key.
-# 2. Run: python -m sentinel.cli analyze demo_project/src --use-llm
-# 3. Continue with dynamic policy loading and LLM policy saving features.
-	- Historian/ChromaDB is optional; skip with --skip-historian if not needed.
-	- Guardian and Gatekeeper pillars work on any folder with supported code (Python, Java, TypeScript).
-	- LLM/AI integration is pluggable and can be expanded as new models/APIs become available.
+10. Notes:
+	- If COHERE_API_KEY is missing, end-to-end-test skips policy growth safely.
+	- If Docker is unavailable, analyze --sandbox will report sandbox unavailable.
+	- If chromadb is unavailable, run analyze with --skip-historian.
 
 ============================================================

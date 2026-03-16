@@ -1,15 +1,19 @@
-# Required for Cohere LLM integration
-cohere
-# Required for .env support (LLM API keys)
-langgraph
-langchain
+# Core runtime dependencies
+gitpython
 tree-sitter
 tree-sitter-python
 tree-sitter-java
 tree-sitter-typescript
+python-dotenv
+requests
+
+# Pillar integrations
 docker
 chromadb
+
+# LLM integration for end-to-end policy growth
+cohere
+
+# Dev/test tooling
 pytest
 ruff
-gitpython
-python-dotenv

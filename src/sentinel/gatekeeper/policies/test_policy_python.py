@@ -23,37 +23,6 @@ import os
 import tempfile
 import unittest
 
-POLICY_SPECS = [
-    {
-        "name": "NoCircularDependenciesPolicy",
-        "language": "PYTHON",
-        "match_mode": "contains",
-        "patterns": ["Circular dependency detected"],
-        "description": "Reject Python projects that contain circular dependencies.",
-    },
-    {
-        "name": "FunctionComplexityPolicy",
-        "language": "PYTHON",
-        "match_mode": "contains",
-        "patterns": ["has complexity"],
-        "description": "Reject Python functions whose reported complexity exceeds the threshold.",
-    },
-    {
-        "name": "TODOCommentPolicy",
-        "language": "PYTHON",
-        "match_mode": "contains",
-        "patterns": ["[TODO]"],
-        "description": "Reject Python code that still contains TODO or FIXME markers.",
-    },
-    {
-        "name": "RequireDocstringPolicy",
-        "language": "PYTHON",
-        "match_mode": "contains",
-        "patterns": ["[DOCSTRING]"],
-        "description": "Reject Python public APIs that are missing docstrings.",
-    },
-]
-
 from sentinel.core.guardian import ArchitecturalGuardian
 from sentinel.core.languages import Language
 from sentinel.gatekeeper import Gatekeeper

@@ -22,30 +22,6 @@ import os
 import tempfile
 import unittest
 
-POLICY_SPECS = [
-    {
-        "name": "StrictTypingPolicy",
-        "language": "TYPESCRIPT",
-        "match_mode": "casefold_contains",
-        "patterns": ["Found usage of 'any'"],
-        "description": "Reject TypeScript code that uses the any type.",
-    },
-    {
-        "name": "NoUnsafeTypeAssertionPolicy",
-        "language": "TYPESCRIPT",
-        "match_mode": "contains",
-        "patterns": ["[UNSAFE_CAST]"],
-        "description": "Reject TypeScript code that uses unsafe as any assertions.",
-    },
-    {
-        "name": "NoConsoleLogPolicy",
-        "language": "TYPESCRIPT",
-        "match_mode": "contains",
-        "patterns": ["[CONSOLE_LOG]"],
-        "description": "Reject TypeScript code that still contains console logging.",
-    },
-]
-
 from sentinel.core.guardian import ArchitecturalGuardian
 from sentinel.core.languages import Language
 from sentinel.gatekeeper import Gatekeeper

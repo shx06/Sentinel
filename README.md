@@ -48,14 +48,12 @@ Sentinel now exposes two project-testing workflows for local paths and GitHub re
 
 The normal `test` workflow runs only the Architectural Guardian and the Principled Gatekeeper. It does not invoke Historian, Fuzzer, Sandbox, or LLM policy growth.
 
-The active runtime policies for Python, Java, and TypeScript are loaded from the `POLICY_SPECS` catalogs defined in:
+The active runtime policies for Python, Java, and TypeScript are loaded from:
 
-- `tests/policies_python/test_policy_python.py`
-- `tests/policies_java/test_policy_java.py`
-- `tests/policies_ts/test_policy_ts.py`
+- `src/sentinel/gatekeeper/policies/policy_specs.json`
 
-Those test-side policy catalogs are the runtime source of truth for Sentinel's language-specific test rules.
+Test files in `tests/` validate policy behavior, but runtime policy loading is independent from the tests folder.
 
-The `end-to-end-test` workflow runs the same Guardian + Gatekeeper flow, then asks Cohere for additional machine-readable policy specs. Any new specs are merged back into the relevant `POLICY_SPECS` catalog so Sentinel's policy coverage can grow over time.
+The `end-to-end-test` workflow runs the same Guardian + Gatekeeper flow, then asks Cohere for additional machine-readable policy specs. Any new specs are merged back into `src/sentinel/gatekeeper/policies/policy_specs.json` so Sentinel's policy coverage can grow over time.
 
 When a GitHub URL is provided, Sentinel clones the repository into the `demo_project/` folder and runs the workflow against that local checkout.
