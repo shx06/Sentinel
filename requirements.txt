@@ -1,19 +1,8 @@
-# Core runtime dependencies
-gitpython
+langgraph
+langchain
 tree-sitter
-tree-sitter-python
-tree-sitter-java
-tree-sitter-typescript
-python-dotenv
-requests
-
-# Pillar integrations
 docker
 chromadb
-
-# LLM integration for end-to-end policy growth
-cohere
-
-# Dev/test tooling
 pytest
 ruff
+gitpython

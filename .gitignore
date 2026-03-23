@@ -132,8 +132,3 @@ dmypy.json
 # OS
 .DS_Store
 Thumbs.db
-
-
-
-demo_project
-tests/reports
