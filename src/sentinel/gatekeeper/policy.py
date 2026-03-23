@@ -1,15 +1,16 @@
-"""
-Policy engine for the Principled Gatekeeper.
+"""Policy framework for the Principled Gatekeeper.
 
-Defines the abstract :class:`Policy` base class and concrete policy
-implementations that inspect pillar reports to decide whether a code
-change should be approved or rejected.
+This module defines the Gatekeeper's policy interface, universal runtime
+policies, and the machinery that converts tests-backed ``POLICY_SPECS``
+catalog entries into executable policy objects.
 """
 
+import re
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from sentinel.core.languages import Language
+from .test_policy_source import load_policy_specs
 
 
 class Policy(ABC):
@@ -185,21 +186,17 @@ class TestPassPolicy(Policy):
         return []
 
 
-class NoCircularDependenciesPolicy(Policy):
-    """
-    Rejects a change when the Guardian reports circular dependencies.
+class SpecBackedPolicy(Policy):
+    """A policy instantiated directly from the tests-backed ``POLICY_SPECS`` catalog."""
 
-    This policy is specific to **Python** projects.  For other languages it
-    is skipped automatically via :meth:`applies_to`.
-
-    The *guardian_report* is expected to be a list of violation strings as
-    returned by :meth:`~sentinel.core.guardian.ArchitecturalGuardian.check_rules`.
-    Entries that contain the word ``"Circular"`` are treated as blocking.
-    """
+    def __init__(self, spec: Dict[str, Any]) -> None:
+        self._spec = spec
+        self._language = Language[spec["language"]]
+        self._patterns = list(spec.get("patterns", []))
+        self._match_mode = spec.get("match_mode", "contains")
 
     def applies_to(self, language: Language) -> bool:
-        """Return ``True`` only for Python."""
-        return language is Language.PYTHON
+        return language is self._language
 
     def evaluate(
         self,
@@ -208,103 +205,52 @@ class NoCircularDependenciesPolicy(Policy):
         fuzzer_report: Optional[Any],
         sandbox_report: Optional[Any],
     ) -> List[str]:
-        """
-        Check for circular dependency violations from the Guardian.
-
-        Args:
-            historian_report: Unused by this policy.
-            guardian_report: List of violation strings from the Guardian,
-                             or ``None``.
-            fuzzer_report: Unused by this policy.
-            sandbox_report: Unused by this policy.
-
-        Returns:
-            List of circular-dependency violation messages, or an empty list.
-        """
         if not guardian_report:
             return []
-        return [v for v in guardian_report if "Circular" in v]
+
+        matches: List[str] = []
+        for violation in guardian_report:
+            if any(self._matches_pattern(violation, pattern) for pattern in self._patterns):
+                matches.append(violation)
+        return matches
+
+    def _matches_pattern(self, violation: str, pattern: str) -> bool:
+        if self._match_mode == "regex":
+            return bool(re.search(pattern, violation))
+        if self._match_mode == "casefold_contains":
+            return pattern.casefold() in violation.casefold()
+        return pattern in violation
 
 
-class StrictTypingPolicy(Policy):
-    """
-    Rejects a change when the Guardian reports typing violations.
-
-    This policy is specific to **TypeScript** and **JavaScript** projects.
-    For other languages it is skipped automatically via :meth:`applies_to`.
-
-    The *guardian_report* is expected to be a list of violation strings.
-    Entries that contain the word ``"Typing"`` are treated as blocking.
-    """
-
-    def applies_to(self, language: Language) -> bool:
-        """Return ``True`` only for TypeScript and JavaScript."""
-        return language in (Language.TYPESCRIPT, Language.JAVASCRIPT)
-
-    def evaluate(
-        self,
-        historian_report: Optional[Any],
-        guardian_report: Optional[Any],
-        fuzzer_report: Optional[Any],
-        sandbox_report: Optional[Any],
-    ) -> List[str]:
-        """
-        Check for typing violations from the Guardian.
-
-        Args:
-            historian_report: Unused by this policy.
-            guardian_report: List of violation strings from the Guardian,
-                             or ``None``.
-            fuzzer_report: Unused by this policy.
-            sandbox_report: Unused by this policy.
-
-        Returns:
-            List of typing violation messages, or an empty list.
-        """
-        if not guardian_report:
-            return []
-        return [v for v in guardian_report if "Typing" in v]
+_SPEC_POLICY_CLASS_CACHE: Dict[str, type[SpecBackedPolicy]] = {}
 
 
-class JavaLayeringPolicy(Policy):
-    """
-    Rejects a change when the Guardian reports layering violations.
+def _build_spec_policy(spec: Dict[str, Any]) -> SpecBackedPolicy:
+    """Create a dynamic policy instance whose class name matches the spec name."""
+    name = spec["name"]
+    policy_class = _SPEC_POLICY_CLASS_CACHE.get(name)
+    if policy_class is None:
+        policy_class = type(name, (SpecBackedPolicy,), {})
+        _SPEC_POLICY_CLASS_CACHE[name] = policy_class
+    return policy_class(spec)
 
-    This policy is specific to **Java** projects.  For other languages it
-    is skipped automatically via :meth:`applies_to`.
 
-    The *guardian_report* is expected to be a list of violation strings.
-    Entries that contain the word ``"Layering"`` are treated as blocking.
-    """
+def policy_from_spec(spec: Dict[str, Any]) -> Policy:
+    """Build a runtime policy instance from a tests-backed policy spec."""
+    return _build_spec_policy(spec)
 
-    def applies_to(self, language: Language) -> bool:
-        """Return ``True`` only for Java."""
-        return language is Language.JAVA
 
-    def evaluate(
-        self,
-        historian_report: Optional[Any],
-        guardian_report: Optional[Any],
-        fuzzer_report: Optional[Any],
-        sandbox_report: Optional[Any],
-    ) -> List[str]:
-        """
-        Check for layering violations from the Guardian.
+def policy_from_name(name: str, language: Language) -> Policy:
+    """Load a named language policy from the tests-backed ``POLICY_SPECS`` catalogs."""
+    for spec in load_policy_specs(language):
+        if spec["name"] == name:
+            return policy_from_spec(spec)
+    raise ValueError(f"Policy spec '{name}' not found for language {language.name}.")
 
-        Args:
-            historian_report: Unused by this policy.
-            guardian_report: List of violation strings from the Guardian,
-                             or ``None``.
-            fuzzer_report: Unused by this policy.
-            sandbox_report: Unused by this policy.
 
-        Returns:
-            List of layering violation messages, or an empty list.
-        """
-        if not guardian_report:
-            return []
-        return [v for v in guardian_report if "Layering" in v]
-
+# ---------------------------------------------------------------------------
+# Policy registry
+# ---------------------------------------------------------------------------
 
 class PolicyConfig:
     """
@@ -320,19 +266,15 @@ class PolicyConfig:
         config.add_policy(TestPassPolicy())
 
     A default configuration with all standard policies enabled is available
-    via :meth:`default`.
+    via :meth:`default`.  Language-specific suites are available via
+    :meth:`for_python`, :meth:`for_java`, and :meth:`for_typescript`.
     """
 
     def __init__(self) -> None:
         self._policies: List[Policy] = []
 
     def add_policy(self, policy: Policy) -> None:
-        """
-        Register a policy.
-
-        Args:
-            policy: A :class:`Policy` instance to add.
-        """
+        """Register a policy."""
         self._policies.append(policy)
 
     @property
@@ -343,14 +285,60 @@ class PolicyConfig:
     @classmethod
     def default(cls) -> "PolicyConfig":
         """
-        Create a :class:`PolicyConfig` with all standard policies enabled.
-
-        Returns:
-            A :class:`PolicyConfig` containing :class:`NoCriticalBugsPolicy`,
-            :class:`ArchitectureCompliancePolicy`, and :class:`TestPassPolicy`.
+        Create a :class:`PolicyConfig` with the universal cross-language
+        policies enabled (fuzzer crashes, architecture compliance, sandbox).
         """
         config = cls()
         config.add_policy(NoCriticalBugsPolicy())
         config.add_policy(ArchitectureCompliancePolicy())
         config.add_policy(TestPassPolicy())
+        return config
+
+    @classmethod
+    def from_languages(cls, languages: List[Language]) -> "PolicyConfig":
+        """Load the active runtime policies for the given languages from ``tests/``."""
+        config = cls()
+        for language in languages:
+            if language is Language.PYTHON:
+                for policy in cls.for_python().policies:
+                    config.add_policy(policy)
+            elif language is Language.JAVA:
+                for policy in cls.for_java().policies:
+                    config.add_policy(policy)
+            elif language is Language.TYPESCRIPT:
+                for policy in cls.for_typescript().policies:
+                    config.add_policy(policy)
+        return config
+
+    @classmethod
+    def for_python(cls) -> "PolicyConfig":
+        """
+        Create a :class:`PolicyConfig` from the tests-backed Python policy catalog.
+        """
+        config = cls()
+        specs = load_policy_specs(Language.PYTHON)
+        for spec in specs:
+            config.add_policy(_build_spec_policy(spec))
+        return config
+
+    @classmethod
+    def for_java(cls) -> "PolicyConfig":
+        """
+        Create a :class:`PolicyConfig` from the tests-backed Java policy catalog.
+        """
+        config = cls()
+        specs = load_policy_specs(Language.JAVA)
+        for spec in specs:
+            config.add_policy(_build_spec_policy(spec))
+        return config
+
+    @classmethod
+    def for_typescript(cls) -> "PolicyConfig":
+        """
+        Create a :class:`PolicyConfig` from the tests-backed TypeScript policy catalog.
+        """
+        config = cls()
+        specs = load_policy_specs(Language.TYPESCRIPT)
+        for spec in specs:
+            config.add_policy(_build_spec_policy(spec))
         return config

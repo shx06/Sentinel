@@ -1,9 +1,10 @@
 """
 Architectural Guardian: analyzes project structure and enforces rules.
 
-Scans a directory tree for Python source files, builds a dependency graph
-using :class:`~sentinel.core.scanner.CodeScanner`, and validates the graph
-against a set of :class:`~sentinel.core.rules.Rule` instances.
+Scans a directory tree for Python, Java, and TypeScript source files,
+builds a dependency graph using :class:`~sentinel.core.scanner.CodeScanner`,
+and validates the graph against a set of :class:`~sentinel.core.rules.Rule`
+instances.
 """
 
 import os
@@ -11,6 +12,12 @@ from typing import Dict, List
 
 from .rules import Rule
 from .scanner import CodeScanner
+
+# File extensions that the Guardian will scan
+_SUPPORTED_EXTENSIONS = frozenset({".py", ".java", ".ts", ".tsx"})
+
+# Default max lines per function before flagging it
+_DEFAULT_MAX_FUNCTION_LINES = 50
 
 
 class ArchitecturalGuardian:
@@ -37,21 +44,24 @@ class ArchitecturalGuardian:
 
     def analyze_structure(self, path: str) -> Dict:
         """
-        Scan all Python files under *path* and build a dependency graph.
+        Scan all supported source files under *path* and build a dependency graph.
+
+        Supported file types: ``.py``, ``.java``, ``.ts``, ``.tsx``.
 
         Each entry in the returned graph is keyed by the absolute file path
         and contains:
 
-        * ``imports`` – list of module names imported by the file.
+        * ``imports`` – list of module/class names imported by the file.
         * ``functions`` – list of function info dicts (name, params,
-          complexity) as returned by
-          :meth:`~sentinel.core.scanner.CodeScanner.get_functions`.
+          complexity); populated for Python files only.
         * ``module_name`` – dotted module name derived from the file's
-          path relative to the package root (used for intra-project
-          dependency resolution).
+          path relative to the package root (Python files) or a
+          simplified path-based name (Java/TypeScript files).
+        * ``violations`` – list of pre-generated violation messages for
+          Java import layering and TypeScript ``any``-type usage.
 
         Args:
-            path: Root directory to scan.  All ``.py`` files found
+            path: Root directory to scan.  All supported source files found
                   recursively are analyzed.
 
         Returns:
@@ -61,38 +71,194 @@ class ArchitecturalGuardian:
         graph: Dict = {}
         root = os.path.abspath(path)
 
-        # Collect all .py files
-        py_files: List[str] = []
+        # Collect all supported source files
+        source_files: List[str] = []
         for dirpath, _dirnames, filenames in os.walk(root):
             for filename in filenames:
-                if filename.endswith(".py"):
-                    py_files.append(os.path.join(dirpath, filename))
+                ext = os.path.splitext(filename)[1]
+                if ext in _SUPPORTED_EXTENSIONS:
+                    source_files.append(os.path.join(dirpath, filename))
 
-        # Determine the package root (highest directory containing __init__.py)
+        # Determine the package root for Python module-name derivation
+        py_files = [f for f in source_files if f.endswith(".py")]
         package_root = self._find_package_root(root, py_files)
 
-        for file_path in py_files:
+        for file_path in source_files:
             try:
                 with open(file_path, encoding="utf-8") as fh:
                     content = fh.read()
             except OSError:
                 continue
 
-            raw_imports = self._scanner.find_imports(content)
-            functions = self._scanner.get_functions(content)
-            module_name = self._derive_module_name(file_path, package_root)
+            ext = os.path.splitext(file_path)[1]
+            filename = os.path.basename(file_path)
+            violations: List[str] = []
 
-            # Resolve relative imports to absolute module names
-            imports = self._resolve_imports(raw_imports, module_name)
+            raw_imports = self._scanner.find_imports(content, ext)
+
+            if ext == ".py":
+                functions = self._scanner.get_functions(content)
+                module_name = self._derive_module_name(file_path, package_root)
+                imports = self._resolve_imports(raw_imports, module_name)
+
+                # --- Python-specific violation checks ---
+
+                # TODO / FIXME markers
+                for comment in self._scanner.find_todo_comments(content):
+                    violations.append(
+                        f"[TODO] TODO/FIXME comment in '{filename}': {comment}"
+                    )
+
+                # Missing docstrings on public functions / classes
+                for item in self._scanner.find_missing_docstrings(content):
+                    violations.append(
+                        f"[DOCSTRING] Missing docstring in "
+                        f"'{module_name}::{item['name']}' ({item['kind']})"
+                    )
+
+                # Overly long functions (line-count proxy via start/end_point)
+                tree_py = self._scanner._parsers[".py"].parse(content.encode())
+                self._collect_long_functions(
+                    tree_py.root_node, violations, filename, module_name
+                )
+
+            else:
+                functions = []
+                # Use a simplified path-based identifier for non-Python files
+                try:
+                    module_name = os.path.relpath(file_path, root)
+                except ValueError:
+                    module_name = file_path
+                imports = raw_imports
+
+                if ext == ".java":
+                    # Emit only policy-relevant Java import violations.
+                    violations.extend(self._collect_java_import_violations(filename, imports))
+
+                    # --- Java-specific violation checks ---
+                    for field in self._scanner.find_public_fields(content):
+                        violations.append(
+                            f"[PUBLIC_FIELD] Public non-constant field "
+                            f"'{field}' in '{filename}'"
+                        )
+
+                    for type_name in self._scanner.find_missing_javadoc(content):
+                        violations.append(
+                            f"[JAVADOC] Missing Javadoc for class "
+                            f"'{type_name}' in '{filename}'"
+                        )
+
+                    for naming_v in self._scanner.find_java_naming_violations(content):
+                        violations.append(
+                            f"[NAMING] {naming_v} in '{filename}'"
+                        )
+
+                    # TODO markers in Java (// TODO …)
+                    for comment in self._scanner.find_todo_comments(content):
+                        violations.append(
+                            f"[TODO] TODO/FIXME comment in '{filename}': {comment}"
+                        )
+
+                elif ext in (".ts", ".tsx"):
+                    # --- TypeScript: any-type usage ---
+                    any_usages = self._scanner.find_any_usages(content, ext)
+                    if any_usages:
+                        try:
+                            rel_path = os.path.relpath(file_path, root)
+                        except ValueError:
+                            rel_path = file_path
+                        violations.append(
+                            f"Found usage of 'any' in {rel_path}"
+                        )
+
+                    # --- TypeScript-specific violation checks ---
+                    try:
+                        rel_path = os.path.relpath(file_path, root)
+                    except ValueError:
+                        rel_path = file_path
+
+                    for _ in self._scanner.find_unsafe_type_assertions(content, ext):
+                        violations.append(
+                            f"[UNSAFE_CAST] Unsafe 'as any' assertion in '{rel_path}'"
+                        )
+                        break  # one violation per file is enough to flag it
+
+                    if self._scanner.find_console_logs(content, ext):
+                        violations.append(
+                            f"[CONSOLE_LOG] console.log() usage in '{rel_path}'"
+                        )
+
+                    # TODO markers in TypeScript
+                    for comment in self._scanner.find_todo_comments(content):
+                        violations.append(
+                            f"[TODO] TODO/FIXME comment in '{filename}': {comment}"
+                        )
 
             graph[file_path] = {
                 "imports": imports,
                 "functions": functions,
                 "module_name": module_name,
+                "violations": violations,
             }
 
         self.graph = graph
         return graph
+
+    @staticmethod
+    def _collect_java_import_violations(filename: str, imports: List[str]) -> List[str]:
+        """Generate Java import violations for targeted architecture checks only."""
+        simple_names: List[str] = []
+        for fq_name in imports:
+            parts = fq_name.split(".")
+            if parts and parts[-1] and parts[-1][0].islower() and len(parts) >= 2:
+                simple_names.append(parts[-2])
+            else:
+                simple_names.append(parts[-1])
+
+        out: List[str] = []
+        lower_name = filename.lower()
+        is_controller = lower_name.endswith("controller.java")
+        is_service = lower_name.endswith("service.java")
+        is_application = lower_name.endswith("application.java")
+
+        framework_types = {
+            "Autowired",
+            "CommandLineRunner",
+            "SpringApplication",
+            "SpringBootApplication",
+        }
+
+        for class_name in simple_names:
+            if not class_name:
+                continue
+
+            if is_service and class_name.endswith("Controller"):
+                out.append(f"Import of '{class_name}' in '{filename}'")
+                continue
+
+            if is_controller and (
+                class_name.endswith("RequestDTO")
+                or class_name.endswith("ResponseDTO")
+                or class_name == "ResponseStatus"
+                or class_name.endswith("Model")
+                or class_name.endswith("Service")
+            ):
+                out.append(f"Import of '{class_name}' in '{filename}'")
+                continue
+
+            if is_application and (
+                class_name.endswith("Controller")
+                or class_name.endswith("DTO")
+                or class_name.endswith("Model")
+            ):
+                out.append(f"Import of '{class_name}' in '{filename}'")
+                continue
+
+            # Framework imports are allowed in Application classes, blocked elsewhere.
+            if class_name in framework_types and not is_application:
+                out.append(f"Import of '{class_name}' in '{filename}'")
+
+        return out
 
     def check_rules(self, rules: List[Rule]) -> List[str]:
         """
@@ -101,15 +267,24 @@ class ArchitecturalGuardian:
         :meth:`analyze_structure` must be called before this method so
         that ``self.graph`` is populated.
 
+        In addition to rule-generated violations, any pre-generated
+        ``violations`` stored per file during :meth:`analyze_structure`
+        (e.g. Java import layering messages and TypeScript ``any``-usage
+        messages) are included in the returned list.
+
         Args:
             rules: List of :class:`~sentinel.core.rules.Rule` instances
                    to evaluate.
 
         Returns:
-            Combined list of violation messages from all rules.  An empty
-            list indicates no violations were found.
+            Combined list of violation messages from all rules and
+            file-level pre-generated violations.  An empty list indicates
+            no violations were found.
         """
         violations: List[str] = []
+        # Include pre-generated file-level violations (Java/TS)
+        for info in self.graph.values():
+            violations.extend(info.get("violations", []))
         for rule in rules:
             violations.extend(rule.check(self.graph))
         return violations
@@ -229,3 +404,38 @@ class ArchitecturalGuardian:
             module_name = ""
 
         return module_name
+
+    @staticmethod
+    def _collect_long_functions(
+        node: object,
+        violations: List[str],
+        filename: str,
+        module_name: str,
+        max_lines: int = _DEFAULT_MAX_FUNCTION_LINES,
+    ) -> None:
+        """
+        Walk a tree-sitter AST and emit violations for overly long functions.
+
+        Args:
+            node: Root AST node (tree-sitter ``Node``).
+            violations: Accumulator list for violation strings.
+            filename: Base file name used in violation messages.
+            module_name: Dotted module name used in violation messages.
+            max_lines: Maximum allowed line count per function.
+        """
+        if node.type == "function_definition":  # type: ignore[attr-defined]
+            name_node = node.child_by_field_name("name")  # type: ignore[attr-defined]
+            name = name_node.text.decode() if name_node else "<unknown>"
+            start_line = node.start_point[0]  # type: ignore[attr-defined]
+            end_line = node.end_point[0]  # type: ignore[attr-defined]
+            line_count = end_line - start_line + 1
+            if line_count > max_lines:
+                violations.append(
+                    f"[LONG_FUNCTION] Function '{module_name}::{name}' in "
+                    f"'{filename}' is {line_count} lines long "
+                    f"(max allowed: {max_lines})"
+                )
+        for child in node.children:  # type: ignore[attr-defined]
+            ArchitecturalGuardian._collect_long_functions(
+                child, violations, filename, module_name, max_lines
+            )
