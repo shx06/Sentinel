@@ -1,77 +1,9 @@
-Python version: 3.11.9
+python version -> 3.11.9
 
-================ Sentinel Current Setup & Flow Guide ================
 
-1. Create and activate a virtual environment:
-	python -m venv venv
-	venv\Scripts\activate
 
-2. Install dependencies:
-	pip install -r requirements.txt
+steps to run the code - 
 
-3. (Optional) Add API keys in .env for LLM-driven policy growth:
-	COHERE_API_KEY=...
-	OPENAI_API_KEY=...
-	GEMINI_API_KEY=...
-
-4. Supported input targets:
-	- Local project path
-	- GitHub repository URL (Sentinel clones into demo_project/<owner>__<repo>)
-
-5. Main workflows:
-	A) Fast policy test workflow (Guardian + Gatekeeper):
-		python -m sentinel.cli test <path_or_github_url>
-		python -m sentinel.cli test <github_url> --refresh-clone
-
-	B) End-to-end policy growth workflow (Guardian + Gatekeeper + Cohere suggestions + autogrow):
-		python -m sentinel.cli end-to-end-test <path_or_github_url>
-		python -m sentinel.cli end-to-end-test <github_url> --refresh-clone
-
-	C) Full 5-pillar workflow (legacy/full analysis path):
-		python -m sentinel.cli analyze <path_or_github_url> [--sandbox] [--skip-historian] [--use-llm]
-		python -m sentinel.cli analyze <github_url> --refresh-clone
-
-6. What each workflow does:
-	- test:
-		1) Guardian scans .py/.java/.ts/.tsx and emits violations
-		2) Gatekeeper loads active runtime policy specs from src/sentinel/gatekeeper/policies/policy_specs.json
-		3) Verdict is produced (APPROVED or REJECTED)
-		4) Report is written to tests/reports/test_<project>_<date>.txt
-
-	- end-to-end-test:
-		1) Runs the same test flow
-		2) Requests machine-readable policy specs from Cohere
-		3) Merges new valid specs into runtime policy catalog JSON
-		4) Report is written to tests/reports/end_to_end_<project>_<date>.txt
-
-	- analyze:
-		1) Historian (optional): mines git history and semantic memory
-		2) Guardian: static structure scan + rule checks
-		3) Fuzzer: discovers/imports Python callables and fuzzes them
-		4) Sandbox (optional): executes smoke test in Docker
-		5) Gatekeeper: evaluates universal policies and outputs verdict
-
-7. Policy source of truth for test/e2e workflows:
-	- src/sentinel/gatekeeper/policies/policy_specs.json
-	- Policy validation tests are co-located under src/sentinel/gatekeeper/policies and core tests under src/sentinel/core and src/sentinel/gatekeeper.
-	- tests/ is now reserved for generated reports and lightweight test artifacts.
-
-8. Makefile shortcuts:
-	- make test PROJECT=<path>
-	- make end-to-end-test PROJECT=<path>
-	- make analyze-bookmyshow
-	- make unit-tests
-
-9. Run tests:
-	- Full suite (recommended):
-		make unit-tests
-	- Equivalent explicit command:
-		python -m unittest sentinel.gatekeeper.test_gatekeeper_core sentinel.core.test_guardian sentinel.core.test_scanner sentinel.gatekeeper.policies.test_policy_python sentinel.gatekeeper.policies.test_policy_java sentinel.gatekeeper.policies.test_policy_ts
-
-10. Notes:
-	- If COHERE_API_KEY is missing, end-to-end-test skips policy growth safely.
-	- end-to-end-test can still exit with code 1 when Gatekeeper rejects the target project; this indicates policy violations in the target, not a Sentinel runtime failure.
-	- If Docker is unavailable, analyze --sandbox will report sandbox unavailable.
-	- If chromadb is unavailable, run analyze with --skip-historian.
-
-============================================================
+python -m venv venv
+source venv/Scripts/activate
+python -m sentinel.cli analyze .

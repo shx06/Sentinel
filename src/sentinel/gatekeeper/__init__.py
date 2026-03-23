@@ -9,14 +9,10 @@ Public API::
 
     from sentinel.gatekeeper import Gatekeeper, Verdict
     from sentinel.gatekeeper import (
-        PolicyConfig,
-        # Universal
         NoCriticalBugsPolicy,
         ArchitectureCompliancePolicy,
         TestPassPolicy,
-        # Tests-backed policy construction
-        policy_from_name,
-        policy_from_spec,
+        PolicyConfig,
     )
 """
 
@@ -27,22 +23,15 @@ from .policy import (
     Policy,
     PolicyConfig,
     TestPassPolicy,
-    policy_from_name,
-    policy_from_spec,
 )
 from .verdict import Verdict
 
 __all__ = [
-    # Core
+    "ArchitectureCompliancePolicy",
     "Gatekeeper",
+    "NoCriticalBugsPolicy",
     "Policy",
     "PolicyConfig",
-    "Verdict",
-    # Universal policies
-    "ArchitectureCompliancePolicy",
-    "NoCriticalBugsPolicy",
     "TestPassPolicy",
-    # Tests-backed policy constructors
-    "policy_from_name",
-    "policy_from_spec",
+    "Verdict",
 ]
