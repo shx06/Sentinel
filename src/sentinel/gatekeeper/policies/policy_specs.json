@@ -168,7 +168,7 @@
       "language": "TYPESCRIPT",
       "match_mode": "casefold_contains",
       "patterns": [
-        "Found usage of 'any' in src\\pages\\api\\"
+        "Found usage of 'any' in src/pages/api/"
       ],
       "description": "Reject TypeScript code that uses the 'any' type in API endpoint files."
     },
@@ -177,7 +177,7 @@
       "language": "TYPESCRIPT",
       "match_mode": "contains",
       "patterns": [
-        "[CONSOLE_LOG] console.log() usage in 'src\\pages\\api\\"
+        "[CONSOLE_LOG] console.log() usage in 'src/pages/api/"
       ],
       "description": "Reject TypeScript code that contains console logging in API endpoint files."
     },
@@ -186,7 +186,7 @@
       "language": "TYPESCRIPT",
       "match_mode": "casefold_contains",
       "patterns": [
-        "Found usage of 'any' in src\\utils\\"
+        "Found usage of 'any' in src/utils/"
       ],
       "description": "Reject TypeScript code that uses the 'any' type in utility files."
     }

@@ -1,7 +1,11 @@
-from dotenv import load_dotenv
-load_dotenv()
 import os
 import requests
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # Google Gemini API key and endpoint from environment variables
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")

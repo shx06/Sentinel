@@ -11,14 +11,9 @@ Usage::
 """
 
 import argparse
-import io
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass  # dotenv is optional, but recommended for .env support
 import importlib.util
 import inspect
+import io
 import json
 import os
 from pathlib import Path
@@ -27,9 +22,16 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import traceback
 from contextlib import redirect_stdout
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv is optional, but recommended for .env support
 
 from sentinel.core.guardian import ArchitecturalGuardian
 from sentinel.core.languages import Language
@@ -53,7 +55,6 @@ _SANDBOX_SMOKE_TEST = "print('Sentinel sandbox check passed')"
 def _run_historian(repo_path: str) -> Optional[Any]:
     """Run the Contextual Historian pillar and return its stats."""
     print("\n[1/5] Historian: Learning from repository history...")
-    import traceback
     try:
         historian = ContextualHistorian(repo_path)
         stats = historian.learn_repository(max_commits=100)

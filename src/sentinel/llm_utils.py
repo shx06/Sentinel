@@ -1,7 +1,11 @@
-from dotenv import load_dotenv
-load_dotenv()
 import os
 import requests
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 

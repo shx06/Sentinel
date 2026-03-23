@@ -1,6 +1,11 @@
-from dotenv import load_dotenv
-load_dotenv()
 import os
+import traceback
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 try:
     import cohere
@@ -13,7 +18,6 @@ COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 # Utility to call Cohere's Chat endpoint for policy suggestions or violation explanations
 # v - 5.20.7
 def call_cohere(messages, model="command-a-03-2025", temperature=0.2, max_tokens=512):
-    import traceback
     print("[Sentinel LLM][DEBUG] call_cohere invoked.")
     print(f"[Sentinel LLM][DEBUG] COHERE_API_KEY present: {bool(COHERE_API_KEY)}")
     print(f"[Sentinel LLM][DEBUG] cohere SDK imported: {cohere is not None}")

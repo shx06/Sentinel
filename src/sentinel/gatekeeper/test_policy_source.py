@@ -27,6 +27,11 @@ _LANGUAGE_KEY_MAP = {
 
 def project_root() -> Path:
     """Return the repository root for the current Sentinel checkout."""
+    current = Path(__file__).resolve().parent
+    for parent in [current, *current.parents]:
+        if (parent / "pyproject.toml").is_file() or (parent / ".git").exists():
+            return parent
+    # Fallback: original depth-based calculation
     return Path(__file__).resolve().parents[3]
 
 
