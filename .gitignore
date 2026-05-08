@@ -132,3 +132,12 @@ dmypy.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Node.js (backend/)
+backend/node_modules/
+backend/.env
+backend/coverage/
+backend/dist/
+backend/build/
+backend/logs/
+backend/*.log
