@@ -36,13 +36,7 @@ const create = ({ id, amount, currency, idempotencyKey }) => {
   return clonePayment(payment);
 };
 
-const updateStatus = ({
-  paymentId,
-  status,
-  reason,
-  gatewayReference = null,
-  failureReason = null,
-}) => {
+const updateStatus = ({ paymentId, status, reason, gatewayReference, failureReason }) => {
   const payment = paymentsById.get(paymentId);
 
   if (!payment) {
@@ -53,8 +47,14 @@ const updateStatus = ({
 
   payment.status = status;
   payment.updatedAt = timestamp;
-  payment.gatewayReference = gatewayReference;
-  payment.failureReason = failureReason;
+  if (gatewayReference !== undefined) {
+    payment.gatewayReference = gatewayReference;
+  }
+
+  if (failureReason !== undefined) {
+    payment.failureReason = failureReason;
+  }
+
   payment.statusHistory.push({
     status,
     timestamp,

@@ -60,7 +60,7 @@ const createPaymentValidation = [
 ];
 
 const getPaymentValidation = [
-  param('paymentId').isUUID(4).withMessage('paymentId must be a valid UUID'),
+  param('paymentId').isUUID('4').withMessage('paymentId must be a valid UUID'),
 ];
 
 module.exports = {
