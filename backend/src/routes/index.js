@@ -2,6 +2,7 @@
 
 const { Router } = require('express');
 const healthRoutes = require('./health.routes');
+const paymentRoutes = require('./payment.routes');
 
 const router = Router();
 
@@ -14,5 +15,6 @@ const router = Router();
  * Payment / transaction / user routes will be added in subsequent PRs.
  */
 router.use('/health', healthRoutes);
+router.use('/payments', paymentRoutes);
 
 module.exports = router;

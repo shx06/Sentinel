@@ -7,4 +7,6 @@
  * in subsequent PRs once the database layer is decided and configured.
  */
 
-module.exports = {};
+module.exports = {
+  paymentModel: require('./payment.model'),
+};

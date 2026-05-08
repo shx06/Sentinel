@@ -47,19 +47,26 @@ backend/
 │   │   └── health.controller.js
 │   ├── routes/             # Route definitions
 │   │   ├── index.js        # Root router
-│   │   └── health.routes.js
-│   ├── services/           # Business logic (future: payment, user, etc.)
-│   ├── models/             # DB models (future: Mongoose / Prisma)
+│   │   ├── health.routes.js
+│   │   └── payment.routes.js
+│   ├── services/           # Business logic layer
+│   │   └── payment.service.js
+│   ├── models/             # Data model layer
+│   │   └── payment.model.js
 │   ├── middlewares/
-│   │   ├── errorHandler.js # Global error handler
-│   │   ├── notFound.js     # 404 catch-all
-│   │   └── requestLogger.js# Morgan HTTP logger
+│   │   ├── errorHandler.js  # Global error handler
+│   │   ├── notFound.js      # 404 catch-all
+│   │   ├── requestLogger.js # Morgan HTTP logger
+│   │   └── validateRequest.js
+│   ├── validators/
+│   │   └── payment.validator.js
 │   └── utils/
 │       ├── ApiError.js     # Structured operational-error class
 │       ├── ApiResponse.js  # Uniform success-response wrapper
 │       └── logger.js       # Winston logger instance
 ├── tests/
-│   └── health.test.js
+│   ├── health.test.js
+│   └── payment.test.js
 ├── .env.example
 ├── .eslintrc.js
 ├── .gitignore
@@ -149,6 +156,37 @@ GET /api/v1/health
 }
 ```
 
+### Payments (Flow 1)
+
+```
+POST /api/v1/payments
+```
+
+**Payload**
+
+```json
+{
+  "amount": 10.01,
+  "currency": "USD",
+  "idempotencyKey": "unique-key-12345"
+}
+```
+
+**Responses**
+
+- `201` when a payment is created and processed.
+- `200` for idempotent replays (same `idempotencyKey`).
+- `400` for validation failures.
+
+```
+GET /api/v1/payments/:paymentId
+```
+
+**Responses**
+
+- `200` when payment exists.
+- `404` when payment is not found.
+
 ---
 
 ## Code Style
@@ -164,8 +202,8 @@ GET /api/v1/health
 Each feature will be delivered in a dedicated pull request:
 
 - [x] PR 1 – Project scaffold & health check *(this PR)*
-- [ ] PR 2 – User registration & authentication (JWT)
-- [ ] PR 3 – Payment initiation & gateway integration
+- [x] PR 2 – Payment initiation & gateway lifecycle tracking
+- [ ] PR 3 – Retry strategy, timeout handling, and stronger failure recovery
 - [ ] PR 4 – Transaction management & history
 - [ ] PR 5 – Refunds & dispute handling
 - [ ] PR 6 – Webhooks (gateway callbacks)

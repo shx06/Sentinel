@@ -7,4 +7,6 @@
  * registered / exported here in subsequent PRs.
  */
 
-module.exports = {};
+module.exports = {
+  paymentService: require('./payment.service'),
+};
